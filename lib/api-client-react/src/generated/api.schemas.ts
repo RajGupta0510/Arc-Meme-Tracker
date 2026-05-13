@@ -23,6 +23,8 @@ export interface Token {
   logoColor: string;
   /** @nullable */
   logoUrl?: string | null;
+  /** @nullable */
+  contractAddress?: string | null;
   totalSupply: number;
   holders: number;
   txCount: number;
@@ -52,6 +54,7 @@ export interface TokenInput {
   logoColor?: string;
   logoImage?: string;
   totalSupply?: number;
+  contractAddress?: string;
   creatorAddress?: string;
 }
 

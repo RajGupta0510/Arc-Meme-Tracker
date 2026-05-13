@@ -61,6 +61,7 @@ export const LaunchTokenBody = zod.object({
   logoColor: zod.string().optional(),
   logoImage: zod.string().optional(),
   totalSupply: zod.number().optional(),
+  contractAddress: zod.string().optional(),
   creatorAddress: zod.string().optional(),
 });
 

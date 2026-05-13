@@ -195,6 +195,21 @@ export function TokenDetailPage() {
                 <span className="text-muted-foreground">Total Supply</span>
                 <span>{formatCompactNumber(token.totalSupply)}</span>
               </div>
+              {token.contractAddress && (
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-muted-foreground flex-shrink-0">Contract</span>
+                  <a
+                    href={`https://testnet-explorer.arcnetwork.io/address/${token.contractAddress}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary truncate hover:underline flex items-center gap-1"
+                    title={token.contractAddress}
+                  >
+                    {token.contractAddress.slice(0, 6)}...{token.contractAddress.slice(-4)}
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor" className="flex-shrink-0"><path d="M6.5 1H11V5.5M11 1L5 7M2 3H1v8h8V9" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </a>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 mt-4">

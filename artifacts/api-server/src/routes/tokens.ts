@@ -21,6 +21,7 @@ type Token = {
   creatorAddress: string;
   logoColor: string;
   logoUrl: string | null;
+  contractAddress: string | null;
   totalSupply: number;
   holders: number;
   txCount: number;
@@ -43,6 +44,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1xKp9...f3Ra",
     logoColor: "#f59e0b",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 1000000000,
     holders: 2847,
     txCount: 14203,
@@ -63,6 +65,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1mNz3...h7Qx",
     logoColor: "#8b5cf6",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 1000000000,
     holders: 1203,
     txCount: 6789,
@@ -83,6 +86,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1pQ7s...w2Yx",
     logoColor: "#22c55e",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 420690000000,
     holders: 3421,
     txCount: 21045,
@@ -103,6 +107,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1eRf2...k9Lm",
     logoColor: "#ef4444",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 1000000000000,
     holders: 47,
     txCount: 203,
@@ -123,6 +128,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1wRt5...p4Ks",
     logoColor: "#3b82f6",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 1000000000,
     holders: 892,
     txCount: 4512,
@@ -143,6 +149,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1sHb8...c3Dq",
     logoColor: "#f97316",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 1000000000000000,
     holders: 412,
     txCount: 1893,
@@ -163,6 +170,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1bKn1...r7Pz",
     logoColor: "#eab308",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 100000000000,
     holders: 1678,
     txCount: 8934,
@@ -183,6 +191,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1aMn6...z1Vw",
     logoColor: "#a855f7",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 1000000000,
     holders: 4231,
     txCount: 31204,
@@ -203,6 +212,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1dCt4...n8Jb",
     logoColor: "#06b6d4",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 1000000000,
     holders: 623,
     txCount: 2891,
@@ -223,6 +233,7 @@ const MOCK_TOKENS: Token[] = [
     creatorAddress: "arc1fLk7...m2St",
     logoColor: "#ec4899",
     logoUrl: null,
+    contractAddress: null,
     totalSupply: 10000000000,
     holders: 1102,
     txCount: 5621,
@@ -293,7 +304,7 @@ router.post("/tokens", async (req, res): Promise<void> => {
     return;
   }
 
-  const { name, ticker, description, website, twitter, telegram, logoColor, logoImage, totalSupply, creatorAddress } = parsed.data;
+  const { name, ticker, description, website, twitter, telegram, logoColor, logoImage, totalSupply, contractAddress, creatorAddress } = parsed.data;
 
   const newToken: Token = {
     id: ticker.toLowerCase() + "-" + Date.now(),
@@ -308,6 +319,7 @@ router.post("/tokens", async (req, res): Promise<void> => {
     creatorAddress: creatorAddress ?? ("arc1" + Math.random().toString(36).slice(2, 8) + "..." + Math.random().toString(36).slice(2, 6)),
     logoColor: logoColor ?? "#8b5cf6",
     logoUrl: logoImage ?? null,
+    contractAddress: contractAddress ?? null,
     totalSupply: totalSupply ?? 1_000_000_000,
     holders: 1,
     txCount: 1,
