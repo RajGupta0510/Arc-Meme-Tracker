@@ -5,7 +5,9 @@
  * ArcMeme.fun API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ListTokensSort } from "./listTokensSort";
 
-export interface HealthStatus {
-  status: string;
-}
+export type ListTokensParams = {
+  sort?: ListTokensSort;
+  limit?: number;
+};

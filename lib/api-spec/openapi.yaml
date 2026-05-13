@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ArcMeme.fun API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: tokens
+    description: Meme token operations
+  - name: stats
+    description: Platform statistics
 paths:
   /healthz:
     get:
@@ -24,6 +28,121 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /tokens:
+    get:
+      operationId: listTokens
+      tags: [tokens]
+      summary: List all tokens
+      parameters:
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [trending, newest, marketCap, volume]
+          required: false
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          required: false
+      responses:
+        "200":
+          description: List of tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Token"
+    post:
+      operationId: launchToken
+      tags: [tokens]
+      summary: Launch a new meme token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenInput"
+      responses:
+        "201":
+          description: Token launched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+
+  /tokens/trending:
+    get:
+      operationId: getTrendingTokens
+      tags: [tokens]
+      summary: Get trending tokens
+      responses:
+        "200":
+          description: Trending tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Token"
+
+  /tokens/{id}:
+    get:
+      operationId: getToken
+      tags: [tokens]
+      summary: Get token by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Token details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+        "404":
+          description: Not found
+
+  /tokens/{id}/chart:
+    get:
+      operationId: getTokenChart
+      tags: [tokens]
+      summary: Get chart data for a token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chart data points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChartPoint"
+
+  /stats:
+    get:
+      operationId: getPlatformStats
+      tags: [stats]
+      summary: Get overall platform statistics
+      responses:
+        "200":
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStats"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +153,124 @@ components:
       required:
         - status
 
+    Token:
+      type: object
+      required:
+        - id
+        - name
+        - ticker
+        - price
+        - marketCap
+        - volume24h
+        - change24h
+        - description
+        - createdAt
+        - creatorAddress
+        - logoColor
+        - totalSupply
+        - holders
+        - txCount
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        ticker:
+          type: string
+        price:
+          type: number
+        marketCap:
+          type: number
+        volume24h:
+          type: number
+        change24h:
+          type: number
+        description:
+          type: string
+        createdAt:
+          type: string
+        creatorAddress:
+          type: string
+        logoColor:
+          type: string
+        totalSupply:
+          type: number
+        holders:
+          type: integer
+        txCount:
+          type: integer
+        website:
+          type: ["string", "null"]
+        twitter:
+          type: ["string", "null"]
+        telegram:
+          type: ["string", "null"]
+
+    TokenInput:
+      type: object
+      required:
+        - name
+        - ticker
+        - description
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        ticker:
+          type: string
+          minLength: 1
+          maxLength: 10
+        description:
+          type: string
+        website:
+          type: string
+        twitter:
+          type: string
+        telegram:
+          type: string
+        logoColor:
+          type: string
+
+    ChartPoint:
+      type: object
+      required:
+        - timestamp
+        - open
+        - high
+        - low
+        - close
+        - volume
+      properties:
+        timestamp:
+          type: integer
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+
+    PlatformStats:
+      type: object
+      required:
+        - totalTokens
+        - totalVolume24h
+        - totalMarketCap
+        - activeTraders
+        - tokensLaunched24h
+      properties:
+        totalTokens:
+          type: integer
+        totalVolume24h:
+          type: number
+        totalMarketCap:
+          type: number
+        activeTraders:
+          type: integer
+        tokensLaunched24h:
+          type: integer
