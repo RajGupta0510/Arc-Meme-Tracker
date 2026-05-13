@@ -3,12 +3,19 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useLocation } from "wouter";
-import { useLaunchToken } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useLaunchToken,
+  getListTokensQueryKey,
+  getGetTrendingTokensQueryKey,
+  getGetPlatformStatsQueryKey,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useWallet } from "@/hooks/use-wallet";
 import { motion } from "framer-motion";
 
 const formSchema = z.object({
@@ -26,8 +33,13 @@ const PRESET_COLORS = ["#22c55e", "#a855f7", "#ec4899", "#eab308", "#3b82f6", "#
 export function LaunchPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const launchToken = useLaunchToken();
+  const { state: walletState } = useWallet();
   const [success, setSuccess] = useState(false);
+
+  const connectedAddress =
+    walletState.status === "connected" ? walletState.address : undefined;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -45,31 +57,43 @@ export function LaunchPage() {
   const watchAll = form.watch();
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    launchToken.mutate({ data: values }, {
-      onSuccess: (token) => {
-        setSuccess(true);
-        toast({
-          title: "Token Launched! 🚀",
-          description: "Your token is now live on the Arc Network.",
-        });
-        setTimeout(() => {
-          setLocation(`/token/${token.id}`);
-        }, 2000);
+    launchToken.mutate(
+      {
+        data: {
+          ...values,
+          creatorAddress: connectedAddress,
+        },
       },
-      onError: () => {
-        toast({
-          variant: "destructive",
-          title: "Launch Failed",
-          description: "Something went wrong. Probably the RPC.",
-        });
+      {
+        onSuccess: (token) => {
+          queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getGetTrendingTokensQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getGetPlatformStatsQueryKey() });
+
+          setSuccess(true);
+          toast({
+            title: "Token Launched! 🚀",
+            description: "Your token is now live on the Arc Network.",
+          });
+          setTimeout(() => {
+            setLocation(`/token/${token.id}`);
+          }, 2000);
+        },
+        onError: () => {
+          toast({
+            variant: "destructive",
+            title: "Launch Failed",
+            description: "Something went wrong. Probably the RPC.",
+          });
+        },
       }
-    });
+    );
   };
 
   if (success) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center min-h-[60vh]">
-        <motion.div 
+        <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           className="text-6xl mb-6"
@@ -84,13 +108,22 @@ export function LaunchPage() {
 
   return (
     <div className="max-w-5xl mx-auto w-full p-4 py-8 grid grid-cols-1 lg:grid-cols-2 gap-12">
-      
+
       {/* Left: Form */}
       <div className="flex flex-col gap-6">
         <div>
           <h1 className="text-3xl font-bold uppercase tracking-tighter">Deploy a Token</h1>
           <p className="text-muted-foreground">0.02 USDC to deploy. Liquidity locked automatically.</p>
         </div>
+
+        {/* Wallet badge */}
+        {connectedAddress && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-primary/30 bg-primary/5 text-xs font-mono">
+            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-muted-foreground">Creator:</span>
+            <span className="text-primary truncate">{connectedAddress}</span>
+          </div>
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -115,9 +148,9 @@ export function LaunchPage() {
                   <FormItem>
                     <FormLabel className="uppercase text-xs tracking-wider">Ticker</FormLabel>
                     <FormControl>
-                      <Input 
-                        placeholder="DOGE" 
-                        className="font-mono uppercase bg-card/50" 
+                      <Input
+                        placeholder="DOGE"
+                        className="font-mono uppercase bg-card/50"
                         {...field}
                         onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                       />
@@ -135,10 +168,10 @@ export function LaunchPage() {
                 <FormItem>
                   <FormLabel className="uppercase text-xs tracking-wider">Description</FormLabel>
                   <FormControl>
-                    <Textarea 
-                      placeholder="What is this token about?" 
-                      className="resize-none h-24 bg-card/50" 
-                      {...field} 
+                    <Textarea
+                      placeholder="What is this token about?"
+                      className="resize-none h-24 bg-card/50"
+                      {...field}
                     />
                   </FormControl>
                   <FormMessage />
@@ -175,7 +208,7 @@ export function LaunchPage() {
 
             <div className="space-y-4 pt-4 border-t border-border/50">
               <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Socials (Optional)</h3>
-              
+
               <FormField
                 control={form.control}
                 name="website"
@@ -214,8 +247,8 @@ export function LaunchPage() {
               />
             </div>
 
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full h-12 text-lg font-bold uppercase tracking-widest text-black"
               disabled={launchToken.isPending}
             >
@@ -225,12 +258,12 @@ export function LaunchPage() {
         </Form>
       </div>
 
-      {/* Right: Preview */}
+      {/* Right: Live Preview */}
       <div className="flex flex-col gap-4">
         <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Live Preview</h3>
         <div className="p-6 bg-card border border-border rounded-xl shadow-2xl sticky top-24">
           <div className="flex items-start gap-4">
-            <div 
+            <div
               className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-2xl text-white shadow-inner transition-colors duration-300"
               style={{ backgroundColor: watchAll.logoColor || "#333" }}
             >
@@ -245,12 +278,36 @@ export function LaunchPage() {
               </div>
             </div>
             <div className="text-right">
-              <div className="font-mono font-bold text-lg text-primary">Deploying...</div>
+              <div className="font-mono font-bold text-lg text-primary">$0.000001</div>
+              <div className="font-mono text-xs text-muted-foreground">Starting price</div>
             </div>
           </div>
-          <div className="mt-6 pt-6 border-t border-border/50 text-sm leading-relaxed text-muted-foreground min-h-[100px] break-words">
+
+          <div className="mt-6 pt-6 border-t border-border/50 text-sm leading-relaxed text-muted-foreground min-h-[80px] break-words">
             {watchAll.description || "Token description will appear here..."}
           </div>
+
+          <div className="mt-4 pt-4 border-t border-border/30 grid grid-cols-3 gap-3 text-center">
+            <div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Supply</div>
+              <div className="font-mono text-xs font-bold">1B</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Market Cap</div>
+              <div className="font-mono text-xs font-bold text-primary">$1,000</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Network</div>
+              <div className="font-mono text-xs font-bold">Arc</div>
+            </div>
+          </div>
+
+          {connectedAddress && (
+            <div className="mt-4 pt-4 border-t border-border/30">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Creator</div>
+              <div className="font-mono text-xs text-primary truncate">{connectedAddress}</div>
+            </div>
+          )}
         </div>
       </div>
 

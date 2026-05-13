@@ -48,6 +48,7 @@ export interface TokenInput {
   twitter?: string;
   telegram?: string;
   logoColor?: string;
+  creatorAddress?: string;
 }
 
 export interface ChartPoint {

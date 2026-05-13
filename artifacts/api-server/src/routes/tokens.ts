@@ -282,7 +282,7 @@ router.post("/tokens", async (req, res): Promise<void> => {
     return;
   }
 
-  const { name, ticker, description, website, twitter, telegram, logoColor } = parsed.data;
+  const { name, ticker, description, website, twitter, telegram, logoColor, creatorAddress } = parsed.data;
 
   const newToken: Token = {
     id: ticker.toLowerCase() + "-" + Date.now(),
@@ -294,7 +294,7 @@ router.post("/tokens", async (req, res): Promise<void> => {
     change24h: 0,
     description,
     createdAt: new Date().toISOString(),
-    creatorAddress: "arc1" + Math.random().toString(36).slice(2, 8) + "..." + Math.random().toString(36).slice(2, 6),
+    creatorAddress: creatorAddress ?? ("arc1" + Math.random().toString(36).slice(2, 8) + "..." + Math.random().toString(36).slice(2, 6)),
     logoColor: logoColor ?? "#8b5cf6",
     totalSupply: 1000000000,
     holders: 1,

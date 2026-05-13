@@ -59,6 +59,7 @@ export const LaunchTokenBody = zod.object({
   twitter: zod.string().optional(),
   telegram: zod.string().optional(),
   logoColor: zod.string().optional(),
+  creatorAddress: zod.string().optional(),
 });
 
 /**
