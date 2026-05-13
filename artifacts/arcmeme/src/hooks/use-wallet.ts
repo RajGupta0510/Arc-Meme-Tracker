@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { BrowserProvider, type Eip1193Provider } from "ethers";
+import { BrowserProvider, formatUnits, type Eip1193Provider } from "ethers";
 
+// Arc Network uses native USDC as the gas token (6 decimals)
 const ARC_TESTNET = {
   chainId: "0x4E454153",
   chainName: "Arc Network Testnet",
-  nativeCurrency: { name: "ARC", symbol: "ARC", decimals: 18 },
+  nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 6 },
   rpcUrls: ["https://testnet-rpc.arcnetwork.io"],
   blockExplorerUrls: ["https://testnet-explorer.arcnetwork.io"],
 };
@@ -12,7 +13,13 @@ const ARC_TESTNET = {
 export type WalletState =
   | { status: "disconnected" }
   | { status: "connecting" }
-  | { status: "connected"; address: string; chainId: string; isArcTestnet: boolean }
+  | {
+      status: "connected";
+      address: string;
+      chainId: string;
+      isArcTestnet: boolean;
+      usdcBalance: string;
+    }
   | { status: "error"; message: string };
 
 function getEthereum(): Eip1193Provider | null {
@@ -29,8 +36,27 @@ function getRawEthereum() {
   return null;
 }
 
-function isArcTestnet(chainId: string) {
+function isOnArcTestnet(chainId: string) {
   return chainId.toLowerCase() === ARC_TESTNET.chainId.toLowerCase();
+}
+
+// Arc uses native USDC with 6 decimals — fetch via eth_getBalance
+async function fetchUsdcBalance(address: string): Promise<string> {
+  const eth = getRawEthereum();
+  if (!eth) return "0.00";
+  try {
+    const rawBalance = (await eth.request({
+      method: "eth_getBalance",
+      params: [address, "latest"],
+    })) as string;
+    // Native USDC on Arc has 6 decimals
+    const formatted = formatUnits(rawBalance, 6);
+    const num = parseFloat(formatted);
+    if (num >= 1000) return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return num.toFixed(2);
+  } catch {
+    return "0.00";
+  }
 }
 
 export function useWallet() {
@@ -51,16 +77,33 @@ export function useWallet() {
       const provider = new BrowserProvider(getEthereum()!);
       const network = await provider.getNetwork();
       const chainId = "0x" + network.chainId.toString(16);
+      const onArc = isOnArcTestnet(chainId);
+      const usdcBalance = onArc ? await fetchUsdcBalance(accounts[0]) : "0.00";
+
       setState({
         status: "connected",
         address: accounts[0],
         chainId,
-        isArcTestnet: isArcTestnet(chainId),
+        isArcTestnet: onArc,
+        usdcBalance,
       });
     } catch {
       setState({ status: "disconnected" });
     }
   }, []);
+
+  // Periodically refresh balance when connected on Arc Testnet
+  useEffect(() => {
+    if (state.status !== "connected" || !state.isArcTestnet) return;
+    const address = state.address;
+    const interval = setInterval(async () => {
+      const fresh = await fetchUsdcBalance(address);
+      setState((prev) =>
+        prev.status === "connected" ? { ...prev, usdcBalance: fresh } : prev
+      );
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [state.status === "connected" && state.isArcTestnet, state.status === "connected" ? state.address : null]);
 
   useEffect(() => {
     const eth = getRawEthereum();

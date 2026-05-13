@@ -89,7 +89,7 @@ export function LaunchPage() {
       <div className="flex flex-col gap-6">
         <div>
           <h1 className="text-3xl font-bold uppercase tracking-tighter">Deploy a Token</h1>
-          <p className="text-muted-foreground">0.02 ARC to deploy. Liquidity locked automatically.</p>
+          <p className="text-muted-foreground">0.02 USDC to deploy. Liquidity locked automatically.</p>
         </div>
 
         <Form {...form}>
