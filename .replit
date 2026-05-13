@@ -18,22 +18,11 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Start Frontend"
+args = "Start API Server"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Start API Server"
-
-[[workflows.workflow]]
-name = "Start Frontend"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=23335 BASE_PATH=/ pnpm --filter @workspace/arcmeme run dev"
-
-[workflows.workflow.metadata]
-outputType = "webview"
+args = "Start Frontend"
 
 [[workflows.workflow]]
 name = "Start API Server"
@@ -47,6 +36,18 @@ waitForPort = 8080
 [workflows.workflow.metadata]
 outputType = "console"
 
+[[workflows.workflow]]
+name = "Start Frontend"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/arcmeme run dev"
+waitForPort = 3000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
@@ -54,6 +55,10 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[[ports]]
+localPort = 3000
+externalPort = 3001
 
 [[ports]]
 localPort = 8080

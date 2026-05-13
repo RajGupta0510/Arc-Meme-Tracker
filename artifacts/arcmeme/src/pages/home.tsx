@@ -18,11 +18,11 @@ export function HomePage() {
       
       {/* Stats Bar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-4 mt-4">
-        <StatBox label="Total Tokens" value={stats?.totalTokens.toLocaleString() || "-"} />
+        <StatBox label="Total Tokens" value={stats?.totalTokens?.toLocaleString() ?? "-"} />
         <StatBox label="24h Volume" value={`$${formatCompactNumber(stats?.totalVolume24h || 0)}`} textClass="text-primary" />
         <StatBox label="Total MCap" value={`$${formatCompactNumber(stats?.totalMarketCap || 0)}`} />
-        <StatBox label="Active Traders" value={stats?.activeTraders.toLocaleString() || "-"} />
-        <StatBox label="Launched (24h)" value={stats?.tokensLaunched24h.toString() || "-"} />
+        <StatBox label="Active Traders" value={stats?.activeTraders?.toLocaleString() ?? "-"} />
+        <StatBox label="Launched (24h)" value={stats?.tokensLaunched24h?.toString() ?? "-"} />
       </div>
 
       {/* Trending Section */}
