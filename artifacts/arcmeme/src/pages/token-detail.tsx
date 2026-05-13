@@ -1,5 +1,6 @@
 import { useParams } from "wouter";
 import { useGetToken, useGetTokenChart, getGetTokenQueryKey, getGetTokenChartQueryKey } from "@workspace/api-client-react";
+import { TokenLogo } from "@/components/token-card";
 import { formatCompactNumber, formatAddress } from "@/lib/utils";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,12 +64,7 @@ export function TokenDetailPage() {
         {/* Token Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-2xl text-white shadow-lg"
-              style={{ backgroundColor: token.logoColor || "#22c55e" }}
-            >
-              {token.ticker.slice(0, 3)}
-            </div>
+            <TokenLogo token={token} size="lg" />
             <div>
               <h1 className="text-3xl font-bold uppercase tracking-tighter">
                 ${token.ticker}

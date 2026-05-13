@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -17,18 +17,47 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@/hooks/use-wallet";
 import { motion } from "framer-motion";
+import { Upload, X, ImageIcon } from "lucide-react";
+
+const SUPPLY_PRESETS = [
+  { label: "1M", value: 1_000_000 },
+  { label: "100M", value: 100_000_000 },
+  { label: "1B", value: 1_000_000_000 },
+  { label: "100B", value: 100_000_000_000 },
+];
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required").max(50),
   ticker: z.string().min(1, "Ticker is required").max(10).transform(v => v.toUpperCase()),
   description: z.string().min(10, "Description needs at least 10 chars"),
+  totalSupply: z.coerce.number().min(1, "Supply must be at least 1").max(1_000_000_000_000_000, "Supply too large"),
   website: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   twitter: z.string().optional().or(z.literal("")),
   telegram: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   logoColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color"),
 });
 
-const PRESET_COLORS = ["#22c55e", "#a855f7", "#ec4899", "#eab308", "#3b82f6", "#ef4444"];
+function compressImage(file: File, maxDimension = 256): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const scale = Math.min(maxDimension / img.width, maxDimension / img.height, 1);
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = reject;
+      img.src = e.target!.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 export function LaunchPage() {
   const [, setLocation] = useLocation();
@@ -37,6 +66,10 @@ export function LaunchPage() {
   const launchToken = useLaunchToken();
   const { state: walletState } = useWallet();
   const [success, setSuccess] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoBase64, setLogoBase64] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const connectedAddress =
     walletState.status === "connected" ? walletState.address : undefined;
@@ -47,20 +80,47 @@ export function LaunchPage() {
       name: "",
       ticker: "",
       description: "",
+      totalSupply: 1_000_000_000,
       website: "",
       twitter: "",
       telegram: "",
-      logoColor: PRESET_COLORS[0],
+      logoColor: "#8b5cf6",
     },
   });
 
   const watchAll = form.watch();
+
+  const handleImageFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ variant: "destructive", title: "Invalid file", description: "Please upload an image file." });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ variant: "destructive", title: "File too large", description: "Max image size is 10MB." });
+      return;
+    }
+    try {
+      const compressed = await compressImage(file);
+      setLogoPreview(compressed);
+      setLogoBase64(compressed);
+    } catch {
+      toast({ variant: "destructive", title: "Upload failed", description: "Could not process the image." });
+    }
+  }, [toast]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleImageFile(file);
+  }, [handleImageFile]);
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     launchToken.mutate(
       {
         data: {
           ...values,
+          logoImage: logoBase64 ?? undefined,
           creatorAddress: connectedAddress,
         },
       },
@@ -69,7 +129,6 @@ export function LaunchPage() {
           queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetTrendingTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetPlatformStatsQueryKey() });
-
           setSuccess(true);
           toast({
             title: "Token Launched! 🚀",
@@ -117,16 +176,69 @@ export function LaunchPage() {
         </div>
 
         {/* Wallet badge */}
-        {connectedAddress && (
+        {connectedAddress ? (
           <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-primary/30 bg-primary/5 text-xs font-mono">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
             <span className="text-muted-foreground">Creator:</span>
             <span className="text-primary truncate">{connectedAddress}</span>
           </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-border/50 bg-secondary/20 text-xs font-mono text-muted-foreground">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground" />
+            No wallet connected — creator address will be auto-generated
+          </div>
         )}
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+
+            {/* Logo Upload */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider">Token Logo</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImageFile(file);
+                }}
+              />
+              {logoPreview ? (
+                <div className="relative w-24 h-24">
+                  <img
+                    src={logoPreview}
+                    alt="Logo preview"
+                    className="w-24 h-24 rounded-full object-cover border-2 border-primary/50 shadow-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setLogoPreview(null); setLogoBase64(null); }}
+                    className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-destructive flex items-center justify-center hover:bg-destructive/80 transition-colors"
+                  >
+                    <X className="w-3 h-3 text-white" />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={onDrop}
+                  className={`flex flex-col items-center justify-center gap-2 h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all ${isDragging ? "border-primary bg-primary/10" : "border-border hover:border-primary/50 hover:bg-secondary/30"}`}
+                >
+                  <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                  <div className="text-center">
+                    <div className="text-sm font-medium">Drop image or click to upload</div>
+                    <div className="text-xs text-muted-foreground">PNG, JPG, GIF — max 10MB</div>
+                  </div>
+                  <Upload className="w-4 h-4 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+
+            {/* Name + Ticker */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -135,7 +247,7 @@ export function LaunchPage() {
                   <FormItem>
                     <FormLabel className="uppercase text-xs tracking-wider">Token Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Doge Coin" className="font-mono bg-card/50" {...field} />
+                      <Input placeholder="e.g. Moon Dog" className="font-mono bg-card/50" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -149,7 +261,7 @@ export function LaunchPage() {
                     <FormLabel className="uppercase text-xs tracking-wider">Ticker</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="DOGE"
+                        placeholder="MDOG"
                         className="font-mono uppercase bg-card/50"
                         {...field}
                         onChange={(e) => field.onChange(e.target.value.toUpperCase())}
@@ -161,6 +273,7 @@ export function LaunchPage() {
               />
             </div>
 
+            {/* Description */}
             <FormField
               control={form.control}
               name="description"
@@ -169,7 +282,7 @@ export function LaunchPage() {
                   <FormLabel className="uppercase text-xs tracking-wider">Description</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="What is this token about?"
+                      placeholder="What is this token about? Tell the degens."
                       className="resize-none h-24 bg-card/50"
                       {...field}
                     />
@@ -179,21 +292,57 @@ export function LaunchPage() {
               )}
             />
 
+            {/* Total Supply */}
+            <FormField
+              control={form.control}
+              name="totalSupply"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="uppercase text-xs tracking-wider">Total Supply</FormLabel>
+                  <div className="flex gap-2 mb-2">
+                    {SUPPLY_PRESETS.map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => field.onChange(p.value)}
+                        className={`flex-1 py-1.5 text-xs font-mono font-bold rounded border transition-all ${
+                          field.value === p.value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border hover:border-primary/50 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      className="font-mono bg-card/50"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Brand Color (fallback for tokens without logo) */}
             <FormField
               control={form.control}
               name="logoColor"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="uppercase text-xs tracking-wider">Brand Color</FormLabel>
+                  <FormLabel className="uppercase text-xs tracking-wider">Brand Color <span className="text-muted-foreground normal-case font-normal">(used if no logo)</span></FormLabel>
                   <FormControl>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex gap-3 items-center">
                       <Input type="color" className="w-12 h-10 p-1 cursor-pointer bg-card/50" {...field} />
-                      <div className="flex gap-2">
-                        {PRESET_COLORS.map(c => (
+                      <div className="flex gap-2 flex-wrap">
+                        {["#22c55e","#a855f7","#ec4899","#eab308","#3b82f6","#ef4444","#06b6d4","#f97316"].map(c => (
                           <button
                             key={c}
                             type="button"
-                            className={`w-8 h-8 rounded-full border-2 transition-all ${field.value === c ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
+                            className={`w-7 h-7 rounded-full border-2 transition-all ${field.value === c ? "border-foreground scale-110" : "border-transparent hover:scale-105"}`}
                             style={{ backgroundColor: c }}
                             onClick={() => field.onChange(c)}
                           />
@@ -201,21 +350,23 @@ export function LaunchPage() {
                       </div>
                     </div>
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
 
-            <div className="space-y-4 pt-4 border-t border-border/50">
+            {/* Socials */}
+            <div className="space-y-3 pt-4 border-t border-border/50">
               <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Socials (Optional)</h3>
-
               <FormField
                 control={form.control}
                 name="website"
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Input placeholder="Website URL" className="bg-card/50 font-mono text-sm" {...field} />
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">🌐</span>
+                        <Input placeholder="https://yourtoken.fun" className="bg-card/50 font-mono text-sm pl-8" {...field} />
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -227,7 +378,10 @@ export function LaunchPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Input placeholder="Twitter Handle (no @)" className="bg-card/50 font-mono text-sm" {...field} />
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">𝕏</span>
+                        <Input placeholder="Handle without @" className="bg-card/50 font-mono text-sm pl-8" {...field} />
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -239,7 +393,10 @@ export function LaunchPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Input placeholder="Telegram Group URL" className="bg-card/50 font-mono text-sm" {...field} />
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">✈</span>
+                        <Input placeholder="https://t.me/yourgroup" className="bg-card/50 font-mono text-sm pl-8" {...field} />
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -252,7 +409,12 @@ export function LaunchPage() {
               className="w-full h-12 text-lg font-bold uppercase tracking-widest text-black"
               disabled={launchToken.isPending}
             >
-              {launchToken.isPending ? "Deploying..." : "Launch Token"}
+              {launchToken.isPending ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  Deploying...
+                </span>
+              ) : "🚀 Launch Token"}
             </Button>
           </form>
         </Form>
@@ -261,36 +423,51 @@ export function LaunchPage() {
       {/* Right: Live Preview */}
       <div className="flex flex-col gap-4">
         <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Live Preview</h3>
-        <div className="p-6 bg-card border border-border rounded-xl shadow-2xl sticky top-24">
+        <div className="p-6 bg-card border border-border rounded-xl shadow-2xl sticky top-24 space-y-6">
+
+          {/* Token header */}
           <div className="flex items-start gap-4">
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-2xl text-white shadow-inner transition-colors duration-300"
-              style={{ backgroundColor: watchAll.logoColor || "#333" }}
-            >
-              {(watchAll.ticker || "?").slice(0, 3)}
-            </div>
-            <div className="flex-1">
-              <div className="font-bold uppercase text-2xl tracking-tight">
+            {logoPreview ? (
+              <img src={logoPreview} alt="logo" className="w-16 h-16 rounded-full object-cover shadow-lg flex-shrink-0" />
+            ) : (
+              <div
+                className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-2xl text-white shadow-inner transition-colors duration-300 flex-shrink-0"
+                style={{ backgroundColor: watchAll.logoColor || "#8b5cf6" }}
+              >
+                {(watchAll.ticker || "?").slice(0, 3)}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="font-bold uppercase text-2xl tracking-tight truncate">
                 ${watchAll.ticker || "TICKER"}
               </div>
-              <div className="text-muted-foreground text-sm">
+              <div className="text-muted-foreground text-sm truncate">
                 {watchAll.name || "Token Name"}
               </div>
+              {connectedAddress && (
+                <div className="text-[10px] font-mono text-primary/70 truncate mt-1">{connectedAddress}</div>
+              )}
             </div>
-            <div className="text-right">
+            <div className="text-right flex-shrink-0">
               <div className="font-mono font-bold text-lg text-primary">$0.000001</div>
-              <div className="font-mono text-xs text-muted-foreground">Starting price</div>
+              <div className="font-mono text-xs text-muted-foreground">Launch price</div>
             </div>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-border/50 text-sm leading-relaxed text-muted-foreground min-h-[80px] break-words">
+          {/* Description */}
+          <div className="text-sm leading-relaxed text-muted-foreground min-h-[60px] break-words border-t border-border/50 pt-4">
             {watchAll.description || "Token description will appear here..."}
           </div>
 
-          <div className="mt-4 pt-4 border-t border-border/30 grid grid-cols-3 gap-3 text-center">
+          {/* Stats grid */}
+          <div className="grid grid-cols-3 gap-3 text-center border-t border-border/30 pt-4">
             <div>
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Supply</div>
-              <div className="font-mono text-xs font-bold">1B</div>
+              <div className="font-mono text-xs font-bold">
+                {watchAll.totalSupply
+                  ? Number(watchAll.totalSupply).toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 })
+                  : "1B"}
+              </div>
             </div>
             <div>
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Market Cap</div>
@@ -302,15 +479,22 @@ export function LaunchPage() {
             </div>
           </div>
 
-          {connectedAddress && (
-            <div className="mt-4 pt-4 border-t border-border/30">
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Creator</div>
-              <div className="font-mono text-xs text-primary truncate">{connectedAddress}</div>
+          {/* Socials */}
+          {(watchAll.website || watchAll.twitter || watchAll.telegram) && (
+            <div className="flex gap-2 flex-wrap border-t border-border/30 pt-4">
+              {watchAll.website && (
+                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">🌐 Website</span>
+              )}
+              {watchAll.twitter && (
+                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">𝕏 @{watchAll.twitter}</span>
+              )}
+              {watchAll.telegram && (
+                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">✈ Telegram</span>
+              )}
             </div>
           )}
         </div>
       </div>
-
     </div>
   );
 }

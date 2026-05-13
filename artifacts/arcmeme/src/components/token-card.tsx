@@ -4,6 +4,27 @@ import type { Token } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
 
+export function TokenLogo({ token, size = "sm" }: { token: Token; size?: "sm" | "lg" }) {
+  const dim = size === "lg" ? "w-16 h-16 text-2xl" : "w-10 h-10 text-sm";
+  if (token.logoUrl) {
+    return (
+      <img
+        src={token.logoUrl}
+        alt={token.ticker}
+        className={`${dim} rounded-full object-cover shadow-inner flex-shrink-0`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${dim} rounded-full flex items-center justify-center font-bold text-white shadow-inner flex-shrink-0`}
+      style={{ backgroundColor: token.logoColor || "#22c55e" }}
+    >
+      {token.ticker.slice(0, 3)}
+    </div>
+  );
+}
+
 export function TokenCard({ token, index }: { token: Token; index?: number }) {
   const isPositive = token.change24h >= 0;
 
@@ -18,11 +39,8 @@ export function TokenCard({ token, index }: { token: Token; index?: number }) {
         <Card className="h-full p-4 hover:border-primary/50 transition-all hover:shadow-[0_0_15px_rgba(34,197,94,0.1)] cursor-pointer bg-card/50 backdrop-blur flex flex-col gap-3 group">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div 
-                className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-inner group-hover:scale-110 transition-transform"
-                style={{ backgroundColor: token.logoColor || "#22c55e" }}
-              >
-                {token.ticker.slice(0, 3)}
+              <div className="group-hover:scale-110 transition-transform">
+                <TokenLogo token={token} size="sm" />
               </div>
               <div>
                 <div className="font-bold uppercase tracking-tight flex items-center gap-2">
@@ -39,7 +57,7 @@ export function TokenCard({ token, index }: { token: Token; index?: number }) {
               </div>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-2 mt-auto pt-3 border-t border-border/50">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase text-muted-foreground tracking-wider">MCap</span>

@@ -21,6 +21,8 @@ export interface Token {
   createdAt: string;
   creatorAddress: string;
   logoColor: string;
+  /** @nullable */
+  logoUrl?: string | null;
   totalSupply: number;
   holders: number;
   txCount: number;
@@ -48,6 +50,8 @@ export interface TokenInput {
   twitter?: string;
   telegram?: string;
   logoColor?: string;
+  logoImage?: string;
+  totalSupply?: number;
   creatorAddress?: string;
 }
 
