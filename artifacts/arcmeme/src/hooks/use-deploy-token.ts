@@ -2,19 +2,17 @@ import { useState, useCallback } from "react";
 import {
   BrowserProvider,
   ContractFactory,
-  JsonRpcProvider,
   type Eip1193Provider,
   type InterfaceAbi,
 } from "ethers";
 import { MEME_TOKEN_ABI, MEME_TOKEN_BYTECODE } from "@/lib/erc20-artifact";
 
 // ─── RPC Configuration ─────────────────────────────────────────────────────
-// Edit this list to change or add RPC endpoints.
-// The first URL is the primary; the rest are tried as fallbacks in order.
+// These URLs are passed to MetaMask when adding Arc Testnet for the first time.
+// Edit this list to add fallback RPC endpoints for MetaMask's network config.
 export const ARC_RPC_URLS = [
   "https://testnet-rpc.arcnetwork.io",
-  // "https://testnet-rpc-2.arcnetwork.io",   // ← add backups here
-  // "https://rpc.arcchain.dev",
+  // "https://testnet-rpc-2.arcnetwork.io",   // ← add fallbacks here
 ];
 
 export const ARC_TESTNET_CHAIN_ID = "0x4E454153";
@@ -57,7 +55,7 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
-      // Never retry a MetaMask rejection
+      // Never retry a deliberate MetaMask rejection
       if ((err as { code?: number }).code === 4001) throw err;
       if (attempt < maxAttempts) {
         onRetry?.(attempt + 1);
@@ -66,29 +64,6 @@ async function withRetry<T>(
     }
   }
   throw lastErr;
-}
-
-// Tries each RPC URL in order and returns the first responsive JsonRpcProvider.
-async function findWorkingProvider(): Promise<JsonRpcProvider> {
-  const errors: string[] = [];
-  for (const url of ARC_RPC_URLS) {
-    try {
-      const p = new JsonRpcProvider(url);
-      // Race against a 6-second timeout per RPC
-      await Promise.race([
-        p.getNetwork(),
-        sleep(6_000).then(() => {
-          throw new Error("Connection timeout");
-        }),
-      ]);
-      return p;
-    } catch (err) {
-      errors.push(`${url} — ${(err as Error).message}`);
-    }
-  }
-  throw new Error(
-    `All RPC endpoints failed:\n${errors.join("\n")}\n\nAdd a working RPC to ARC_RPC_URLS in use-deploy-token.ts`
-  );
 }
 
 // ─── Error Helpers ─────────────────────────────────────────────────────────
@@ -100,10 +75,9 @@ const RPC_KEYWORDS = [
   "connection",
   "econnrefused",
   "econnreset",
+  "rate limit",
   "502",
   "503",
-  "503",
-  "rate limit",
   "rpc",
 ];
 
@@ -122,10 +96,10 @@ export function friendlyError(err: unknown): string {
     return "RPC request timed out. The node may be congested — try again in a moment.";
   }
   if (lower.includes("network") || lower.includes("econnrefused") || lower.includes("econnreset")) {
-    return "Cannot reach the Arc Testnet RPC endpoint. Check your internet connection or add a fallback RPC.";
+    return "Cannot reach the Arc Testnet RPC endpoint. Check your internet connection or update the RPC in MetaMask.";
   }
   if (lower.includes("502") || lower.includes("503")) {
-    return "Arc Testnet RPC returned a server error (5xx). The node may be down — try a fallback RPC.";
+    return "Arc Testnet RPC returned a server error (5xx). The node may be down — try updating the RPC in MetaMask.";
   }
   return raw.slice(0, 250);
 }
@@ -150,7 +124,7 @@ export function useDeployToken() {
       const request = (eth as { request: (a: unknown) => Promise<unknown> }).request.bind(eth);
 
       try {
-        // ── Step 1: Switch MetaMask to Arc Testnet ────────────────────────
+        // ── Step 1: Switch MetaMask to Arc Testnet (with retry) ───────────
         setDeployStatus({ status: "switching-network" });
         await withRetry(
           async () => {
@@ -182,11 +156,11 @@ export function useDeployToken() {
             })
         );
 
-        // ── Step 2: Send deployment tx through MetaMask ───────────────────
-        // MetaMask must sign — no retry here (each attempt would create a new tx popup).
+        // ── Step 2: Deploy via MetaMask signer ────────────────────────────
+        // All signing and broadcasting goes through window.ethereum (MetaMask).
         setDeployStatus({ status: "confirming" });
-        const browserProvider = new BrowserProvider(eth as Eip1193Provider);
-        const signer = await browserProvider.getSigner();
+        const provider = new BrowserProvider(eth as Eip1193Provider);
+        const signer = await provider.getSigner();
         const factory = new ContractFactory(
           MEME_TOKEN_ABI as unknown as InterfaceAbi,
           MEME_TOKEN_BYTECODE,
@@ -195,22 +169,12 @@ export function useDeployToken() {
         const contract = await factory.deploy(name, symbol, BigInt(totalSupply));
         const txHash = contract.deploymentTransaction()?.hash ?? "";
 
-        // ── Step 3: Wait for mining via fallback JsonRpcProvider ──────────
-        // Using a direct JsonRpcProvider (not BrowserProvider) for polling
-        // so we bypass MetaMask's RPC for the confirmation phase.
+        // ── Step 3: Wait for mining via MetaMask's provider (with retry) ──
         setDeployStatus({ status: "deploying", txHash });
-
         const contractAddress = await withRetry(
           async () => {
-            const provider = await findWorkingProvider();
-            const receipt = await Promise.race([
-              provider.waitForTransaction(txHash, 1, 120_000),
-              sleep(110_000).then(() => {
-                throw new Error("Transaction confirmation timeout after 110s");
-              }),
-            ]);
-            if (!receipt) throw new Error("Transaction receipt not found");
-            return receipt.contractAddress ?? (await contract.getAddress());
+            await contract.waitForDeployment();
+            return await contract.getAddress();
           },
           3,
           2_500,
