@@ -40,16 +40,14 @@ function isOnArcTestnet(chainId: string) {
   return chainId.toLowerCase() === ARC_TESTNET.chainId.toLowerCase();
 }
 
-// Arc uses native USDC with 6 decimals — fetch via eth_getBalance
+// Arc native USDC has 6 decimals — fetch via MetaMask BrowserProvider
 async function fetchUsdcBalance(address: string): Promise<string> {
-  const eth = getRawEthereum();
+  const eth = getEthereum();
   if (!eth) return "0.00";
   try {
-    const rawBalance = (await eth.request({
-      method: "eth_getBalance",
-      params: [address, "latest"],
-    })) as string;
-    // Native USDC on Arc has 6 decimals
+    const provider = new BrowserProvider(eth);
+    const rawBalance = await provider.getBalance(address);
+    // Arc native USDC uses 6 decimals (not 18)
     const formatted = formatUnits(rawBalance, 6);
     const num = parseFloat(formatted);
     if (num >= 1000) return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
