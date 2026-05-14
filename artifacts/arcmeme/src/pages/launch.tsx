@@ -170,6 +170,7 @@ export function LaunchPage() {
     deployStatus.status === "switching-network" ||
     deployStatus.status === "confirming" ||
     deployStatus.status === "deploying" ||
+    deployStatus.status === "retrying" ||
     launchToken.isPending;
 
   if (success) {
@@ -446,7 +447,7 @@ export function LaunchPage() {
 
             {/* Deploy step progress (shown during launch) */}
             {isLaunching && (
-              <div className="rounded-xl border border-border bg-card/60 p-4 space-y-2">
+              <div className="rounded-xl border border-border bg-card/60 p-4 space-y-2.5">
                 {[
                   { key: "switching-network", label: "Switching to Arc Testnet" },
                   { key: "confirming", label: "Confirm in MetaMask" },
@@ -454,34 +455,54 @@ export function LaunchPage() {
                   { key: "saving", label: "Saving token metadata" },
                 ].map((step) => {
                   const statusOrder = ["switching-network", "confirming", "deploying", "saving"];
+                  const isRetrying = deployStatus.status === "retrying";
+                  const activeStatus = isRetrying
+                    ? (deployStatus as { step: string }).step.toLowerCase().includes("network")
+                      ? "switching-network"
+                      : "deploying"
+                    : deployStatus.status;
                   const currentOrder = launchToken.isPending
                     ? statusOrder.indexOf("saving")
-                    : statusOrder.indexOf(deployStatus.status);
+                    : statusOrder.indexOf(activeStatus);
                   const stepOrder = statusOrder.indexOf(step.key);
                   const isDone = stepOrder < currentOrder;
                   const isCurrent = stepOrder === currentOrder;
+                  const isRetryingThisStep = isRetrying && isCurrent;
+
                   return (
                     <div key={step.key} className={`flex items-center gap-3 text-sm font-mono transition-opacity ${isDone || isCurrent ? "opacity-100" : "opacity-30"}`}>
                       {isDone ? (
                         <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
                       ) : isCurrent ? (
-                        <Loader2 className="w-4 h-4 text-primary animate-spin flex-shrink-0" />
+                        <Loader2 className={`w-4 h-4 flex-shrink-0 animate-spin ${isRetryingThisStep ? "text-yellow-400" : "text-primary"}`} />
                       ) : (
                         <span className="w-4 h-4 rounded-full border border-border flex-shrink-0" />
                       )}
                       <span className={isCurrent ? "text-foreground" : isDone ? "text-muted-foreground line-through" : "text-muted-foreground"}>
                         {step.label}
+                        {isRetryingThisStep && (
+                          <span className="ml-2 text-yellow-400 text-[10px] font-bold">
+                            retry {(deployStatus as { attempt: number }).attempt}/{(deployStatus as { maxAttempts: number }).maxAttempts}
+                          </span>
+                        )}
                       </span>
-                      {step.key === "deploying" && deployStatus.status === "deploying" && (
-                        <a
-                          href={`${ARC_EXPLORER}/tx/${(deployStatus as { txHash: string }).txHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary/60 hover:text-primary ml-auto flex items-center gap-1 text-[10px]"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          tx
-                        </a>
+                      {step.key === "deploying" && (deployStatus.status === "deploying" || (isRetrying && isCurrent)) && (
+                        (() => {
+                          const txHash = deployStatus.status === "deploying"
+                            ? (deployStatus as { txHash: string }).txHash
+                            : null;
+                          return txHash ? (
+                            <a
+                              href={`${ARC_EXPLORER}/tx/${txHash}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary/60 hover:text-primary ml-auto flex items-center gap-1 text-[10px]"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              tx
+                            </a>
+                          ) : null;
+                        })()
                       )}
                     </div>
                   );
@@ -491,8 +512,28 @@ export function LaunchPage() {
 
             {/* Deploy error */}
             {deployStatus.status === "error" && (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive font-mono">
-                {deployStatus.message}
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-destructive text-lg leading-none mt-0.5">✕</span>
+                  <p className="text-sm text-destructive font-mono leading-relaxed">
+                    {deployStatus.message}
+                  </p>
+                </div>
+                {deployStatus.isRpcError && (
+                  <div className="text-xs text-muted-foreground bg-secondary/40 rounded px-3 py-2 font-mono space-y-1">
+                    <div className="font-bold text-foreground/70">To fix RPC failures:</div>
+                    <div>1. Open MetaMask → Settings → Networks → Arc Testnet</div>
+                    <div>2. Replace the RPC URL with a working endpoint</div>
+                    <div>3. Or add fallback RPCs in <code className="text-primary">use-deploy-token.ts → ARC_RPC_URLS</code></div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => resetDeploy()}
+                  className="text-xs font-mono text-primary underline underline-offset-2 hover:no-underline"
+                >
+                  ↩ Dismiss and try again
+                </button>
               </div>
             )}
 
@@ -519,6 +560,7 @@ export function LaunchPage() {
                   {deployStatus.status === "switching-network" && "Switching Network..."}
                   {deployStatus.status === "confirming" && "Waiting for MetaMask..."}
                   {deployStatus.status === "deploying" && "Mining..."}
+                  {deployStatus.status === "retrying" && `Retrying ${(deployStatus as { step: string }).step}...`}
                   {(deployStatus.status === "idle" || deployStatus.status === "success") && launchToken.isPending && "Saving..."}
                 </span>
               ) : hasMetaMask && walletState.status === "connected" ? "🚀 Deploy ERC20 + Launch" : "💾 Save Token"}
