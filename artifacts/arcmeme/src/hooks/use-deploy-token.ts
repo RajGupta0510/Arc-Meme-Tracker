@@ -11,17 +11,17 @@ import { MEME_TOKEN_ABI, MEME_TOKEN_BYTECODE } from "@/lib/erc20-artifact";
 // These URLs are passed to MetaMask when adding Arc Testnet for the first time.
 // Edit this list to add fallback RPC endpoints for MetaMask's network config.
 export const ARC_RPC_URLS = [
-  "https://testnet-rpc.arcnetwork.io",
+  "https://rpc.testnet.arc.network",
   // "https://testnet-rpc-2.arcnetwork.io",   // ← add fallbacks here
 ];
 
-export const ARC_TESTNET_CHAIN_ID = "0x4E454153";
-export const ARC_EXPLORER = "https://testnet-explorer.arcnetwork.io";
+export const ARC_TESTNET_CHAIN_ID = "0x4cef52";
+export const ARC_EXPLORER = "https://testnet.arcscan.app";
 
 const ARC_TESTNET_PARAMS = {
   chainId: ARC_TESTNET_CHAIN_ID,
   chainName: "Arc Network Testnet",
-  nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 6 },
+  nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 18 },
   rpcUrls: ARC_RPC_URLS,
   blockExplorerUrls: [ARC_EXPLORER],
 };

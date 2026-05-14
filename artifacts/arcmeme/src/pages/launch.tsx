@@ -9,6 +9,9 @@ import {
   getListTokensQueryKey,
   getGetTrendingTokensQueryKey,
   getGetPlatformStatsQueryKey,
+  ListTokensSort,
+  type PlatformStats,
+  type Token,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -142,6 +145,27 @@ export function LaunchPage() {
       },
       {
         onSuccess: (token) => {
+          const newestQueryKey = getListTokensQueryKey({
+            sort: ListTokensSort.newest,
+            limit: 50,
+          });
+
+          queryClient.setQueryData<Token[]>(newestQueryKey, (previous) => {
+            const existing = previous ?? [];
+            return [token, ...existing.filter((item) => item.id !== token.id)].slice(0, 50);
+          });
+
+          queryClient.setQueryData<PlatformStats>(
+            getGetPlatformStatsQueryKey(),
+            (previous) => ({
+              totalTokens: (previous?.totalTokens ?? 0) + 1,
+              totalVolume24h: previous?.totalVolume24h ?? 0,
+              totalMarketCap: (previous?.totalMarketCap ?? 0) + token.marketCap,
+              activeTraders: (previous?.activeTraders ?? 0) + token.holders,
+              tokensLaunched24h: (previous?.tokensLaunched24h ?? 0) + 1,
+            }),
+          );
+
           queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetTrendingTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetPlatformStatsQueryKey() });

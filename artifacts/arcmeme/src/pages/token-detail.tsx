@@ -13,7 +13,7 @@ export function TokenDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { state } = useWallet();
 
-  const { data: token, isLoading: tokenLoading } = useGetToken(id!, {
+  const { data: token, isLoading: tokenLoading, isError: tokenError, refetch: refetchToken } = useGetToken(id!, {
     query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
   });
 
@@ -35,6 +35,17 @@ export function TokenDetailPage() {
     return (
       <div className="p-8 flex justify-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (tokenError) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        <div className="font-mono text-sm text-destructive mb-3">Could not load token data.</div>
+        <Button variant="outline" size="sm" onClick={() => refetchToken()} className="font-mono text-xs">
+          Retry
+        </Button>
       </div>
     );
   }
@@ -199,7 +210,7 @@ export function TokenDetailPage() {
                 <div className="flex justify-between items-center gap-2">
                   <span className="text-muted-foreground flex-shrink-0">Contract</span>
                   <a
-                    href={`https://testnet-explorer.arcnetwork.io/address/${token.contractAddress}`}
+                    href={`https://testnet.arcscan.app/address/${token.contractAddress}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-primary truncate hover:underline flex items-center gap-1"

@@ -360,10 +360,27 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response: Response;
+  try {
+    response = await fetch(input, { ...init, method, headers });
+  } catch (cause) {
+    console.error("[api-client] Request failed", {
+      method,
+      url: requestInfo.url,
+      cause,
+    });
+    throw cause;
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
+    console.error("[api-client] Response error", {
+      method,
+      url: response.url || requestInfo.url,
+      status: response.status,
+      statusText: response.statusText,
+      data: errorData,
+    });
     throw new ApiError(response, errorData, requestInfo);
   }
 

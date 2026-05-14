@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { BrowserProvider, formatUnits, type Eip1193Provider } from "ethers";
 
-// Arc Network uses native USDC as the gas token (6 decimals)
+// Arc Network uses native USDC as the gas token (18 native decimals)
 const ARC_TESTNET = {
-  chainId: "0x4E454153",
+  chainId: "0x4cef52",
   chainName: "Arc Network Testnet",
-  nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 6 },
-  rpcUrls: ["https://testnet-rpc.arcnetwork.io"],
-  blockExplorerUrls: ["https://testnet-explorer.arcnetwork.io"],
+  nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 18 },
+  rpcUrls: ["https://rpc.testnet.arc.network"],
+  blockExplorerUrls: ["https://testnet.arcscan.app"],
 };
 
 export type WalletState =

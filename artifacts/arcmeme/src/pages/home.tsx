@@ -7,14 +7,47 @@ import { ListTokensSort } from "@workspace/api-client-react";
 import { motion } from "framer-motion";
 
 export function HomePage() {
-  const { data: stats } = useGetPlatformStats({ query: { queryKey: getGetPlatformStatsQueryKey() } });
-  const { data: trending } = useGetTrendingTokens({ query: { queryKey: getGetTrendingTokensQueryKey() } });
+  const {
+    data: stats,
+    isError: statsError,
+    refetch: refetchStats,
+  } = useGetPlatformStats({ query: { queryKey: getGetPlatformStatsQueryKey() } });
+  const {
+    data: trending,
+    isError: trendingError,
+    refetch: refetchTrending,
+  } = useGetTrendingTokens({ query: { queryKey: getGetTrendingTokensQueryKey() } });
   
   const [sort, setSort] = useState<ListTokensSort>(ListTokensSort.newest);
-  const { data: tokens, isLoading } = useListTokens({ sort, limit: 50 }, { query: { queryKey: getListTokensQueryKey({ sort, limit: 50 }) } });
+  const {
+    data: tokens,
+    isLoading,
+    isError: tokensError,
+    refetch: refetchTokens,
+  } = useListTokens({ sort, limit: 50 }, { query: { queryKey: getListTokensQueryKey({ sort, limit: 50 }) } });
+
+  const hasApiError = statsError || trendingError || tokensError;
+  const retryApi = () => {
+    refetchStats();
+    refetchTrending();
+    refetchTokens();
+  };
 
   return (
     <div className="flex-1 w-full max-w-7xl mx-auto p-4 flex flex-col gap-8 pb-20">
+      {hasApiError && (
+        <div className="border border-destructive/40 bg-destructive/10 rounded-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="font-mono text-sm text-destructive font-bold">API request failed</div>
+            <div className="text-xs text-muted-foreground">
+              Check the backend server and browser console for request details.
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={retryApi} className="font-mono text-xs">
+            Retry
+          </Button>
+        </div>
+      )}
       
       {/* Stats Bar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-4 mt-4">
@@ -67,11 +100,22 @@ export function HomePage() {
               <div key={i} className="h-[120px] bg-card/50 rounded-lg animate-pulse" />
             ))}
           </div>
-        ) : (
+        ) : tokensError ? (
+          <div className="border border-border bg-card/30 rounded-md p-6 text-center">
+            <div className="font-mono text-sm text-destructive mb-2">Could not load tokens.</div>
+            <Button variant="outline" size="sm" onClick={() => refetchTokens()} className="font-mono text-xs">
+              Retry Terminal
+            </Button>
+          </div>
+        ) : tokens && tokens.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {tokens?.map((token, i) => (
+            {tokens.map((token, i) => (
               <TokenCard key={token.id} token={token} index={i} />
             ))}
+          </div>
+        ) : (
+          <div className="border border-border bg-card/30 rounded-md p-6 text-center">
+            <div className="font-mono text-sm text-muted-foreground">No tokens launched yet.</div>
           </div>
         )}
       </section>
