@@ -18,6 +18,15 @@ export interface Token {
   createdAt: string;
   creatorAddress: string;
   logoColor: string;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  contractAddress?: string | null;
+  marketType?: "unlisted" | "amm_pool";
+  /** @nullable */
+  pairAddress?: string | null;
+  /** @nullable */
+  routerAddress?: string | null;
   totalSupply: number;
   holders: number;
   txCount: number;

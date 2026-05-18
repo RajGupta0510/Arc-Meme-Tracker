@@ -9,11 +9,55 @@ import {
   createToken,
   getToken,
   listTokens,
+  updateTokenMarket,
   type Token,
 } from "../lib/token-store";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+const evmAddressPattern = /^0x[a-fA-F0-9]{40}$/;
+type TokenMarketType = "unlisted" | "amm_pool";
+
+function parseTokenMarketBody(body: unknown) {
+  if (!body || typeof body !== "object") {
+    return { success: false as const, error: "Request body is required." };
+  }
+
+  const record = body as Record<string, unknown>;
+  const marketType = record.marketType;
+  const pairAddress = record.pairAddress;
+  const routerAddress = record.routerAddress;
+
+  if (marketType !== "unlisted" && marketType !== "amm_pool") {
+    return { success: false as const, error: "marketType must be unlisted or amm_pool." };
+  }
+
+  if (pairAddress !== null && typeof pairAddress !== "string") {
+    return { success: false as const, error: "pairAddress must be a string or null." };
+  }
+
+  if (routerAddress !== null && typeof routerAddress !== "string") {
+    return { success: false as const, error: "routerAddress must be a string or null." };
+  }
+
+  if (typeof pairAddress === "string" && !evmAddressPattern.test(pairAddress)) {
+    return { success: false as const, error: "pairAddress must be a valid EVM address." };
+  }
+
+  if (typeof routerAddress === "string" && !evmAddressPattern.test(routerAddress)) {
+    return { success: false as const, error: "routerAddress must be a valid EVM address." };
+  }
+
+  return {
+    success: true as const,
+    data: {
+      marketType: marketType as TokenMarketType,
+      pairAddress,
+      routerAddress,
+    },
+  };
+}
 
 function getErrorPayload(err: unknown) {
   return {
@@ -159,6 +203,46 @@ router.get("/tokens/:id", async (req, res): Promise<void> => {
   } catch (err) {
     const details = getErrorPayload(err);
     logger.error({ err, id: req.params.id }, "GET /api/tokens/:id failed");
+    res.status(503).json(details);
+  }
+});
+
+router.patch("/tokens/:id/market", async (req, res): Promise<void> => {
+  try {
+    const id = typeof req.params.id === "string" ? req.params.id : "";
+    if (!id) {
+      res.status(400).json({ error: "Token id is required." });
+      return;
+    }
+
+    const parsed = parseTokenMarketBody(req.body);
+    if (!parsed.success) {
+      logger.warn({ error: parsed.error }, "PATCH /api/tokens/:id/market validation failed");
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+
+    const token = updateTokenMarket(id, parsed.data);
+    if (!token) {
+      res.status(404).json({ error: "Token not found" });
+      return;
+    }
+
+    logger.info(
+      {
+        id: token.id,
+        ticker: token.ticker,
+        marketType: token.marketType,
+        pairAddress: token.pairAddress,
+        routerAddress: token.routerAddress,
+      },
+      "PATCH /api/tokens/:id/market",
+    );
+
+    res.json(token);
+  } catch (err) {
+    const details = getErrorPayload(err);
+    logger.error({ err, id: req.params.id, body: req.body }, "PATCH /api/tokens/:id/market failed");
     res.status(503).json(details);
   }
 });

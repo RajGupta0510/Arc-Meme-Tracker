@@ -8,10 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import { useWallet } from "@/hooks/use-wallet";
+import { useTokenMarket } from "@/hooks/use-token-market";
+import { useTokenTrade } from "@/hooks/use-token-trade";
+import { Loader2 } from "lucide-react";
+import { formatUnits } from "ethers";
 
 export function TokenDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { state } = useWallet();
+  const { state, refresh: refreshWallet } = useWallet();
 
   const { data: token, isLoading: tokenLoading, isError: tokenError, refetch: refetchToken } = useGetToken(id!, {
     query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
@@ -23,6 +27,9 @@ export function TokenDetailPage() {
 
   const [tradeTab, setTradeTab] = useState<"buy" | "sell">("buy");
   const [tradeAmount, setTradeAmount] = useState("");
+  const walletAddress = state.status === "connected" ? state.address : undefined;
+  const market = useTokenMarket(token, walletAddress);
+  const trade = useTokenTrade();
 
   const usdcBalance =
     state.status === "connected" && state.isArcTestnet
@@ -61,12 +68,53 @@ export function TokenDetailPage() {
   }
 
   const isPositive = token.change24h >= 0;
-
-  const estimatedTokens = tradeAmount
-    ? (parseFloat(tradeAmount) / token.price).toLocaleString(undefined, {
-        maximumFractionDigits: 2,
-      })
+  const displayedPrice = market.price ?? token.price;
+  const isTradingPending =
+    trade.status.status === "quoting" ||
+    trade.status.status === "approving" ||
+    trade.status.status === "confirming";
+  const activeBalance = tradeTab === "buy" ? usdcBalance : market.tokenBalance;
+  const numericActiveBalance =
+    activeBalance !== null && Number.isFinite(Number(activeBalance)) ? Number(activeBalance) : null;
+  const poolTokenReserve = market.reserves
+    ? formatBalance(formatUnits(market.reserves.baseReserve, market.tokenDecimals))
     : null;
+  const poolUsdcReserve = market.reserves
+    ? formatBalance(formatUnits(market.reserves.quoteReserve, 18))
+    : null;
+  const canTrade =
+    state.status === "connected" &&
+    state.isArcTestnet &&
+    market.isTradeable &&
+    market.reserves !== null &&
+    Number(tradeAmount) > 0 &&
+    !isTradingPending;
+
+  const estimatedTokens = tradeAmount && displayedPrice > 0
+    ? tradeTab === "buy"
+      ? (parseFloat(tradeAmount) / displayedPrice).toLocaleString(undefined, {
+          maximumFractionDigits: 4,
+        })
+      : (parseFloat(tradeAmount) * displayedPrice).toLocaleString(undefined, {
+          maximumFractionDigits: 4,
+        })
+    : null;
+
+  const handleTrade = async () => {
+    if (!market.reserves) return;
+    const txHash = await trade.executeTrade({
+      token,
+      side: tradeTab,
+      amount: tradeAmount,
+      reserves: market.reserves,
+      tokenDecimals: market.tokenDecimals,
+      amm: market.amm,
+    });
+
+    if (!txHash) return;
+    setTradeAmount("");
+    await Promise.all([market.refresh(), refreshWallet()]);
+  };
 
   return (
     <div className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:flex-row gap-6 pb-20">
@@ -87,8 +135,13 @@ export function TokenDetailPage() {
           </div>
           <div className="text-right">
             <div className="text-3xl font-mono font-bold">
-              ${token.price.toFixed(6)}
+              ${displayedPrice.toFixed(6)}
             </div>
+            {market.price !== null && (
+              <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+                live pool price
+              </div>
+            )}
             <div
               className={`font-mono text-lg font-medium ${isPositive ? "text-primary" : "text-destructive"}`}
             >
@@ -223,6 +276,36 @@ export function TokenDetailPage() {
                   </a>
                 </div>
               )}
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-muted-foreground flex-shrink-0">Market</span>
+                {token.marketType === "amm_pool" && token.pairAddress ? (
+                  <a
+                    href={`https://testnet.arcscan.app/address/${token.pairAddress}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary truncate hover:underline"
+                    title={token.pairAddress}
+                  >
+                    AMM Pool {token.pairAddress.slice(0, 6)}...{token.pairAddress.slice(-4)}
+                  </a>
+                ) : (
+                  <span className="text-yellow-400">No liquidity pool</span>
+                )}
+              </div>
+              {token.routerAddress && (
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-muted-foreground flex-shrink-0">Router</span>
+                  <a
+                    href={`https://testnet.arcscan.app/address/${token.routerAddress}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary truncate hover:underline"
+                    title={token.routerAddress}
+                  >
+                    {token.routerAddress.slice(0, 6)}...{token.routerAddress.slice(-4)}
+                  </a>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 mt-4">
@@ -307,13 +390,13 @@ export function TokenDetailPage() {
             <div className="space-y-2">
               <div className="flex justify-between text-xs font-mono">
                 <span className="text-muted-foreground">
-                  Amount (USDC)
+                  Amount ({tradeTab === "buy" ? "USDC" : token.ticker})
                 </span>
                 <span className="text-muted-foreground">
                   Balance:{" "}
-                  {usdcBalance !== null ? (
+                  {activeBalance !== null ? (
                     <span className="text-foreground font-medium">
-                      ${usdcBalance}
+                      {tradeTab === "buy" ? "$" : ""}{activeBalance}
                     </span>
                   ) : (
                     <span className="text-muted-foreground/50">—</span>
@@ -330,19 +413,19 @@ export function TokenDetailPage() {
                   data-testid="input-trade-amount"
                 />
                 <div className="absolute right-3 top-3 font-mono text-xs font-bold text-muted-foreground tracking-wider">
-                  USDC
+                  {tradeTab === "buy" ? "USDC" : token.ticker}
                 </div>
               </div>
 
               {/* Quick-fill buttons */}
-              {usdcBalance !== null && usdcBalance !== "—" && (
+              {activeBalance !== null && activeBalance !== "—" && (
                 <div className="flex gap-1">
                   {[25, 50, 100].map((pct) => (
                     <button
                       key={pct}
                       onClick={() => {
-                        if (numericUsdcBalance !== null) {
-                          setTradeAmount(formatBalance((numericUsdcBalance * pct) / 100));
+                        if (numericActiveBalance !== null) {
+                          setTradeAmount(formatBalance((numericActiveBalance * pct) / 100));
                         }
                       }}
                       className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
@@ -352,7 +435,7 @@ export function TokenDetailPage() {
                     </button>
                   ))}
                   <button
-                    onClick={() => setTradeAmount(formatBalance(usdcBalance))}
+                    onClick={() => activeBalance && setTradeAmount(formatBalance(activeBalance))}
                     className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                     data-testid="button-fill-max"
                   >
@@ -363,8 +446,28 @@ export function TokenDetailPage() {
 
               {estimatedTokens && (
                 <div className="text-xs font-mono text-muted-foreground text-right">
-                  ≈ {estimatedTokens} {token.ticker}
+                  ≈ {estimatedTokens} {tradeTab === "buy" ? token.ticker : "USDC"}
                 </div>
+              )}
+              {market.error && (
+                <div className="text-xs font-mono text-destructive text-right">
+                  Market refresh failed: {market.error}
+                </div>
+              )}
+              {trade.status.status === "error" && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
+                  {trade.status.message}
+                </div>
+              )}
+              {trade.status.status === "success" && (
+                <a
+                  href={`https://testnet.arcscan.app/tx/${trade.status.txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-primary font-mono hover:underline"
+                >
+                  Swap confirmed. View transaction.
+                </a>
               )}
             </div>
 
@@ -377,31 +480,60 @@ export function TokenDetailPage() {
               <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
                 Switch to Arc Testnet to trade
               </div>
+            ) : !market.isTradeable ? (
+              <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
+                Liquidity pool required before trading
+              </div>
             ) : (
               <Button
                 className="w-full font-bold uppercase tracking-wider h-12 text-black"
                 size="lg"
                 data-testid="button-place-trade"
+                disabled={!canTrade}
+                onClick={handleTrade}
               >
-                {tradeTab === "buy" ? "Buy" : "Sell"} {token.ticker}
+                {isTradingPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {trade.status.status === "approving" ? "Approving..." : "Confirming..."}
+                  </span>
+                ) : (
+                  `${tradeTab === "buy" ? "Buy" : "Sell"} ${token.ticker}`
+                )}
               </Button>
             )}
           </CardContent>
         </Card>
 
-        {/* Bonding Curve */}
+        {/* Pool Reserves */}
         <Card className="border-border bg-card/50">
           <CardContent className="p-4 space-y-2">
             <div className="flex justify-between text-xs font-mono uppercase">
-              <span className="text-muted-foreground">Bonding Curve Progress</span>
-              <span className="text-primary font-bold">47%</span>
+              <span className="text-muted-foreground">TOKEN/WUSDC Pool</span>
+              <span className={market.isTradeable ? "text-primary font-bold" : "text-yellow-400 font-bold"}>
+                {market.isTradeable ? "Live" : "Unlisted"}
+              </span>
             </div>
-            <div className="h-3 w-full bg-secondary rounded-full overflow-hidden">
-              <div className="h-full bg-primary" style={{ width: "47%" }} />
-            </div>
-            <p className="text-[10px] text-muted-foreground text-center">
-              When cap reaches 100%, liquidity is locked on ArcSwap.
-            </p>
+            {market.isTradeable && poolTokenReserve && poolUsdcReserve ? (
+              <div className="space-y-1 text-xs font-mono">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{token.ticker}</span>
+                  <span>{poolTokenReserve}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">WUSDC</span>
+                  <span>{poolUsdcReserve}</span>
+                </div>
+                <div className="flex justify-between border-t border-border/50 pt-2 mt-2">
+                  <span className="text-muted-foreground">Price</span>
+                  <span className="text-primary">${displayedPrice.toFixed(6)}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground text-center">
+                Create a liquidity pool before real swaps are available.
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

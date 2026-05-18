@@ -6,6 +6,7 @@ import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useLaunchToken,
+  getGetTokenQueryKey,
   getListTokensQueryKey,
   getGetTrendingTokensQueryKey,
   getGetPlatformStatsQueryKey,
@@ -20,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@/hooks/use-wallet";
 import { useDeployToken, ARC_EXPLORER } from "@/hooks/use-deploy-token";
+import { useCreateLiquidityPool } from "@/hooks/use-create-liquidity-pool";
 import { motion } from "framer-motion";
 import { Upload, X, ImageIcon, CheckCircle, Loader2, ExternalLink } from "lucide-react";
 
@@ -86,8 +88,17 @@ export function LaunchPage() {
   const launchToken = useLaunchToken();
   const { state: walletState } = useWallet();
   const { deployStatus, deploy, reset: resetDeploy } = useDeployToken();
+  const {
+    amm,
+    status: liquidityStatus,
+    createLiquidityPool,
+    reset: resetLiquidity,
+  } = useCreateLiquidityPool();
   const [success, setSuccess] = useState(false);
+  const [launchedToken, setLaunchedToken] = useState<Token | null>(null);
   const [deployedContractAddress, setDeployedContractAddress] = useState<string | null>(null);
+  const [liquidityTokenAmount, setLiquidityTokenAmount] = useState("");
+  const [liquidityUsdcAmount, setLiquidityUsdcAmount] = useState("1");
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -185,14 +196,17 @@ export function LaunchPage() {
           queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetTrendingTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetPlatformStatsQueryKey() });
+          setLaunchedToken(token);
+          setLiquidityTokenAmount(String(Math.max(Math.floor(token.totalSupply * 0.1), 1)));
+          setLiquidityUsdcAmount("1");
+          resetLiquidity();
           setSuccess(true);
           toast({
             title: "Token Launched!",
             description: contractAddress
-              ? "ERC20 deployed and live on Arc Network Testnet."
+              ? "ERC20 deployed. Create a TOKEN/WUSDC pool to make it tradeable."
               : "Token saved. Connect MetaMask to deploy on-chain next time.",
           });
-          setTimeout(() => setLocation(`/token/${token.id}`), 2500);
         },
         onError: (error) => {
           console.error("[launch] Failed to save token metadata", error);
@@ -214,7 +228,47 @@ export function LaunchPage() {
     deployStatus.status === "retrying" ||
     launchToken.isPending;
 
+  const isCreatingLiquidity =
+    liquidityStatus.status === "detecting-pair" ||
+    liquidityStatus.status === "creating-pair" ||
+    liquidityStatus.status === "wrapping-usdc" ||
+    liquidityStatus.status === "approving" ||
+    liquidityStatus.status === "adding-liquidity" ||
+    liquidityStatus.status === "saving-market";
+
+  const liquidityStepLabel =
+    liquidityStatus.status === "detecting-pair" ? "Detecting or creating TOKEN/WUSDC pair..." :
+    liquidityStatus.status === "creating-pair" ? "Creating TOKEN/WUSDC pair..." :
+    liquidityStatus.status === "wrapping-usdc" ? "Wrapping native USDC..." :
+    liquidityStatus.status === "approving" ? "Approving TOKEN and WUSDC..." :
+    liquidityStatus.status === "adding-liquidity" ? "Adding initial liquidity..." :
+    liquidityStatus.status === "saving-market" ? "Saving market metadata..." :
+    "Create Liquidity Pool";
+
+  const handleCreateLiquidity = async () => {
+    if (!launchedToken) return;
+
+    const updatedToken = await createLiquidityPool({
+      token: launchedToken,
+      tokenAmount: liquidityTokenAmount,
+      wusdcAmount: liquidityUsdcAmount,
+    });
+
+    if (!updatedToken) return;
+
+    setLaunchedToken(updatedToken);
+    queryClient.setQueryData<Token>(getGetTokenQueryKey(updatedToken.id), updatedToken);
+    queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetTrendingTokensQueryKey() });
+    toast({
+      title: "Liquidity Pool Created",
+      description: `${updatedToken.ticker}/WUSDC is ready for market tracking.`,
+    });
+  };
+
   if (success) {
+    const marketReady = launchedToken?.marketType === "amm_pool" && launchedToken.pairAddress;
+
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center min-h-[60vh]">
         <motion.div
@@ -242,7 +296,99 @@ export function LaunchPage() {
         ) : (
           <p className="text-muted-foreground font-mono text-sm">Token saved without on-chain deployment.</p>
         )}
-        <p className="text-muted-foreground font-mono mt-4 text-xs">Redirecting to token page...</p>
+
+        {deployedContractAddress && launchedToken && !marketReady && (
+          <div className="mt-6 p-4 bg-card border border-border rounded-xl max-w-md w-full text-left space-y-4">
+            <div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Create Liquidity Pool</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Seed an ApexiSwap {launchedToken.ticker}/WUSDC pool so ArcMeme can track real reserves and market status.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                  {launchedToken.ticker}
+                </span>
+                <Input
+                  type="number"
+                  min="0"
+                  value={liquidityTokenAmount}
+                  onChange={(event) => setLiquidityTokenAmount(event.target.value)}
+                  className="font-mono bg-background/60"
+                  disabled={isCreatingLiquidity}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">WUSDC</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={liquidityUsdcAmount}
+                  onChange={(event) => setLiquidityUsdcAmount(event.target.value)}
+                  className="font-mono bg-background/60"
+                  disabled={isCreatingLiquidity}
+                />
+              </label>
+            </div>
+
+            <div className="text-[10px] text-muted-foreground font-mono space-y-1">
+              <div>Router: {amm.routerAddress.slice(0, 8)}...{amm.routerAddress.slice(-6)}</div>
+              <div>Factory: {amm.factoryAddress.slice(0, 8)}...{amm.factoryAddress.slice(-6)}</div>
+              <div>Each step opens MetaMask when a signature is needed.</div>
+            </div>
+
+            {liquidityStatus.status === "error" && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
+                {liquidityStatus.message}
+              </div>
+            )}
+
+            <Button
+              type="button"
+              className="w-full font-bold text-black"
+              disabled={isCreatingLiquidity || !liquidityTokenAmount || !liquidityUsdcAmount}
+              onClick={handleCreateLiquidity}
+            >
+              {isCreatingLiquidity ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {liquidityStepLabel}
+                </span>
+              ) : (
+                liquidityStepLabel
+              )}
+            </Button>
+          </div>
+        )}
+
+        {marketReady && (
+          <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-xl max-w-md w-full text-left space-y-2">
+            <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Liquidity Pool Ready</div>
+            <div className="font-mono text-primary text-sm break-all">{launchedToken.pairAddress}</div>
+            <a
+              href={`${ARC_EXPLORER}/address/${launchedToken.pairAddress}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" />
+              View pair on Arc Explorer
+            </a>
+          </div>
+        )}
+
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-6"
+          onClick={() => launchedToken && setLocation(`/token/${launchedToken.id}`)}
+          disabled={!launchedToken}
+        >
+          Open Token Page
+        </Button>
       </div>
     );
   }

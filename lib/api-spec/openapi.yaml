@@ -109,6 +109,33 @@ paths:
         "404":
           description: Not found
 
+  /tokens/{id}/market:
+    patch:
+      operationId: updateTokenMarket
+      tags: [tokens]
+      summary: Update token market metadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenMarketInput"
+      responses:
+        "200":
+          description: Token market metadata updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+        "404":
+          description: Not found
+
   /tokens/{id}/chart:
     get:
       operationId: getTokenChart
@@ -193,6 +220,17 @@ components:
           type: string
         logoColor:
           type: string
+        logoUrl:
+          type: ["string", "null"]
+        contractAddress:
+          type: ["string", "null"]
+        marketType:
+          type: string
+          enum: [unlisted, amm_pool]
+        pairAddress:
+          type: ["string", "null"]
+        routerAddress:
+          type: ["string", "null"]
         totalSupply:
           type: number
         holders:
@@ -231,6 +269,21 @@ components:
           type: string
         logoColor:
           type: string
+
+    TokenMarketInput:
+      type: object
+      required:
+        - marketType
+        - pairAddress
+        - routerAddress
+      properties:
+        marketType:
+          type: string
+          enum: [unlisted, amm_pool]
+        pairAddress:
+          type: ["string", "null"]
+        routerAddress:
+          type: ["string", "null"]
 
     ChartPoint:
       type: object

@@ -179,6 +179,7 @@ export function useWallet() {
     connect,
     disconnect,
     switchToArcTestnet,
+    refresh: updateConnectedState,
     getShortAddress,
     isMetaMaskAvailable: getRawEthereum() !== null,
   };

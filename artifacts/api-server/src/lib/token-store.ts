@@ -17,6 +17,9 @@ export type Token = {
   logoColor: string;
   logoUrl: string | null;
   contractAddress: string | null;
+  marketType: "unlisted" | "amm_pool";
+  pairAddress: string | null;
+  routerAddress: string | null;
   totalSupply: number;
   holders: number;
   txCount: number;
@@ -25,9 +28,12 @@ export type Token = {
   telegram: string | null;
 };
 
-type TokenInput = Omit<Token, "id" | "createdAt"> & {
+type TokenInput = Omit<Token, "id" | "createdAt" | "marketType" | "pairAddress" | "routerAddress"> & {
   id?: string;
   createdAt?: string;
+  marketType?: Token["marketType"];
+  pairAddress?: string | null;
+  routerAddress?: string | null;
 };
 
 const seedTokens: Token[] = [
@@ -45,6 +51,9 @@ const seedTokens: Token[] = [
     logoColor: "#f59e0b",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 1000000000,
     holders: 2847,
     txCount: 14203,
@@ -66,6 +75,9 @@ const seedTokens: Token[] = [
     logoColor: "#8b5cf6",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 1000000000,
     holders: 1203,
     txCount: 6789,
@@ -87,6 +99,9 @@ const seedTokens: Token[] = [
     logoColor: "#22c55e",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 420690000000,
     holders: 3421,
     txCount: 21045,
@@ -108,6 +123,9 @@ const seedTokens: Token[] = [
     logoColor: "#ef4444",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 1000000000000,
     holders: 47,
     txCount: 203,
@@ -129,6 +147,9 @@ const seedTokens: Token[] = [
     logoColor: "#3b82f6",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 1000000000,
     holders: 892,
     txCount: 4512,
@@ -150,6 +171,9 @@ const seedTokens: Token[] = [
     logoColor: "#f97316",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 1000000000000000,
     holders: 412,
     txCount: 1893,
@@ -171,6 +195,9 @@ const seedTokens: Token[] = [
     logoColor: "#eab308",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 100000000000,
     holders: 1678,
     txCount: 8934,
@@ -192,6 +219,9 @@ const seedTokens: Token[] = [
     logoColor: "#a855f7",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 1000000000,
     holders: 4231,
     txCount: 31204,
@@ -213,6 +243,9 @@ const seedTokens: Token[] = [
     logoColor: "#06b6d4",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 1000000000,
     holders: 623,
     txCount: 2891,
@@ -234,6 +267,9 @@ const seedTokens: Token[] = [
     logoColor: "#ec4899",
     logoUrl: null,
     contractAddress: null,
+    marketType: "unlisted",
+    pairAddress: null,
+    routerAddress: null,
     totalSupply: 10000000000,
     holders: 1102,
     txCount: 5621,
@@ -266,6 +302,9 @@ const createTokensTableSql = `
     logoColor TEXT NOT NULL,
     logoUrl TEXT,
     contractAddress TEXT,
+    marketType TEXT NOT NULL DEFAULT 'unlisted',
+    pairAddress TEXT,
+    routerAddress TEXT,
     totalSupply REAL NOT NULL,
     holders INTEGER NOT NULL,
     txCount INTEGER NOT NULL,
@@ -291,6 +330,9 @@ const requiredColumns = [
   ["logoColor", "TEXT NOT NULL DEFAULT '#8b5cf6'"],
   ["logoUrl", "TEXT"],
   ["contractAddress", "TEXT"],
+  ["marketType", "TEXT NOT NULL DEFAULT 'unlisted'"],
+  ["pairAddress", "TEXT"],
+  ["routerAddress", "TEXT"],
   ["totalSupply", "REAL NOT NULL DEFAULT 0"],
   ["holders", "INTEGER NOT NULL DEFAULT 0"],
   ["txCount", "INTEGER NOT NULL DEFAULT 0"],
@@ -328,8 +370,8 @@ db.exec(`
 
 const tokenColumns = `
   id, name, ticker, price, marketCap, volume24h, change24h, description,
-  createdAt, creatorAddress, logoColor, logoUrl, contractAddress, totalSupply,
-  holders, txCount, website, twitter, telegram
+  createdAt, creatorAddress, logoColor, logoUrl, contractAddress, marketType,
+  pairAddress, routerAddress, totalSupply, holders, txCount, website, twitter, telegram
 `;
 
 const countStatement = db.prepare("SELECT COUNT(*) AS count FROM tokens");
@@ -338,8 +380,8 @@ const insertStatement = db.prepare(`
   VALUES (
     $id, $name, $ticker, $price, $marketCap, $volume24h, $change24h,
     $description, $createdAt, $creatorAddress, $logoColor, $logoUrl,
-    $contractAddress, $totalSupply, $holders, $txCount, $website, $twitter,
-    $telegram
+    $contractAddress, $marketType, $pairAddress, $routerAddress, $totalSupply,
+    $holders, $txCount, $website, $twitter, $telegram
   )
 `);
 
@@ -358,6 +400,9 @@ function rowToToken(row: Record<string, unknown>): Token {
     logoColor: String(row.logoColor),
     logoUrl: row.logoUrl === null ? null : String(row.logoUrl),
     contractAddress: row.contractAddress === null ? null : String(row.contractAddress),
+    marketType: row.marketType === "amm_pool" ? "amm_pool" : "unlisted",
+    pairAddress: row.pairAddress === null ? null : String(row.pairAddress),
+    routerAddress: row.routerAddress === null ? null : String(row.routerAddress),
     totalSupply: Number(row.totalSupply),
     holders: Number(row.holders),
     txCount: Number(row.txCount),
@@ -382,6 +427,9 @@ function saveToken(token: Token) {
     $logoColor: token.logoColor,
     $logoUrl: token.logoUrl,
     $contractAddress: token.contractAddress,
+    $marketType: token.marketType,
+    $pairAddress: token.pairAddress,
+    $routerAddress: token.routerAddress,
     $totalSupply: token.totalSupply,
     $holders: token.holders,
     $txCount: token.txCount,
@@ -448,10 +496,36 @@ export function createToken(input: TokenInput): Token {
     id: input.id ?? `${input.ticker.toLowerCase()}-${Date.now()}`,
     ticker: input.ticker.toUpperCase(),
     createdAt: input.createdAt ?? new Date().toISOString(),
+    marketType: input.marketType ?? "unlisted",
+    pairAddress: input.pairAddress ?? null,
+    routerAddress: input.routerAddress ?? null,
   };
 
   saveToken(token);
   return token;
+}
+
+const updateMarketStatement = db.prepare(`
+  UPDATE tokens
+  SET marketType = $marketType,
+      pairAddress = $pairAddress,
+      routerAddress = $routerAddress
+  WHERE id = $id
+`);
+
+export function updateTokenMarket(
+  id: string,
+  market: Pick<Token, "marketType" | "pairAddress" | "routerAddress">,
+): Token | null {
+  const result = updateMarketStatement.run({
+    $id: id,
+    $marketType: market.marketType,
+    $pairAddress: market.pairAddress,
+    $routerAddress: market.routerAddress,
+  });
+
+  if (result.changes === 0) return null;
+  return getToken(id);
 }
 
 export function getTokenDbPath() {
