@@ -12,6 +12,16 @@ export function formatCompactNumber(value: number): string {
   return value.toFixed(2);
 }
 
+export function formatBalance(value: number | string): string {
+  const number = typeof value === "number" ? value : Number(value.replace(/,/g, ""));
+  if (!Number.isFinite(number)) return "0.000";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+    useGrouping: false,
+  }).format(number);
+}
+
 export function formatAddress(address: string): string {
   if (!address || address.length < 12) return address;
   return address.slice(0, 8) + "..." + address.slice(-4);

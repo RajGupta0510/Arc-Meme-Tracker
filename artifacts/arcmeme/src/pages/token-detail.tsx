@@ -1,7 +1,7 @@
 import { useParams } from "wouter";
 import { useGetToken, useGetTokenChart, getGetTokenQueryKey, getGetTokenChartQueryKey } from "@workspace/api-client-react";
 import { TokenLogo } from "@/components/token-card";
-import { formatCompactNumber, formatAddress } from "@/lib/utils";
+import { formatCompactNumber, formatAddress, formatBalance } from "@/lib/utils";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,10 +26,12 @@ export function TokenDetailPage() {
 
   const usdcBalance =
     state.status === "connected" && state.isArcTestnet
-      ? state.usdcBalance
+      ? formatBalance(state.usdcBalance)
       : state.status === "connected"
       ? "—"
       : null;
+  const numericUsdcBalance =
+    usdcBalance !== null && Number.isFinite(Number(usdcBalance)) ? Number(usdcBalance) : null;
 
   if (tokenLoading) {
     return (
@@ -339,9 +341,8 @@ export function TokenDetailPage() {
                     <button
                       key={pct}
                       onClick={() => {
-                        const bal = parseFloat(usdcBalance.replace(/,/g, ""));
-                        if (!isNaN(bal)) {
-                          setTradeAmount(((bal * pct) / 100).toFixed(2));
+                        if (numericUsdcBalance !== null) {
+                          setTradeAmount(formatBalance((numericUsdcBalance * pct) / 100));
                         }
                       }}
                       className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
@@ -351,7 +352,7 @@ export function TokenDetailPage() {
                     </button>
                   ))}
                   <button
-                    onClick={() => setTradeAmount(usdcBalance.replace(/,/g, ""))}
+                    onClick={() => setTradeAmount(formatBalance(usdcBalance))}
                     className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                     data-testid="button-fill-max"
                   >

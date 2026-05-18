@@ -66,7 +66,13 @@ function applyBaseUrl(input: RequestInfo | URL): RequestInfo | URL {
   // Only prepend to relative paths (starting with /)
   if (!url.startsWith("/")) return input;
 
-  const absolute = `${_baseUrl}${url}`;
+  const path =
+    _baseUrl.endsWith("/api") && url === "/api"
+      ? ""
+      : _baseUrl.endsWith("/api") && url.startsWith("/api/")
+        ? url.slice("/api".length)
+        : url;
+  const absolute = `${_baseUrl}${path}`;
   if (typeof input === "string") return absolute;
   if (isUrl(input)) return new URL(absolute);
   return new Request(absolute, input as Request);
@@ -359,6 +365,10 @@ export async function customFetch<T = unknown>(
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
+
+  if (typeof window !== "undefined") {
+    console.debug("[api-client] Request", requestInfo);
+  }
 
   let response: Response;
   try {

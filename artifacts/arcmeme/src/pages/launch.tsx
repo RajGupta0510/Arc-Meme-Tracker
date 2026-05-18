@@ -41,6 +41,22 @@ const formSchema = z.object({
   logoColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color"),
 });
 
+function getApiErrorMessage(error: unknown) {
+  if (!error || typeof error !== "object") return "Unknown API error.";
+
+  const data = (error as { data?: unknown }).data;
+  if (data && typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    const message = record.message ?? record.error;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+
+  const message = (error as { message?: unknown }).message;
+  if (typeof message === "string" && message.trim()) return message;
+
+  return "Unknown API error.";
+}
+
 function compressImage(file: File, maxDimension = 256): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -178,12 +194,13 @@ export function LaunchPage() {
           });
           setTimeout(() => setLocation(`/token/${token.id}`), 2500);
         },
-        onError: () => {
+        onError: (error) => {
+          console.error("[launch] Failed to save token metadata", error);
           resetDeploy();
           toast({
             variant: "destructive",
             title: "Save Failed",
-            description: "Contract deployed but failed to save metadata. Try again.",
+            description: `Contract deployed but metadata save failed: ${getApiErrorMessage(error)}`,
           });
         },
       }

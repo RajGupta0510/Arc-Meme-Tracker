@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { BrowserProvider, formatUnits, type Eip1193Provider } from "ethers";
+import { formatBalance } from "@/lib/utils";
 
 // Arc Network uses native USDC as the gas token (18 native decimals)
 const ARC_TESTNET = {
@@ -40,20 +41,16 @@ function isOnArcTestnet(chainId: string) {
   return chainId.toLowerCase() === ARC_TESTNET.chainId.toLowerCase();
 }
 
-// Arc native USDC has 6 decimals — fetch via MetaMask BrowserProvider
+// Arc native USDC is exposed through the EVM native balance with 18 decimals.
 async function fetchUsdcBalance(address: string): Promise<string> {
   const eth = getEthereum();
-  if (!eth) return "0.00";
+  if (!eth) return "0.000";
   try {
     const provider = new BrowserProvider(eth);
     const rawBalance = await provider.getBalance(address);
-    // Arc native USDC uses 6 decimals (not 18)
-    const formatted = formatUnits(rawBalance, 6);
-    const num = parseFloat(formatted);
-    if (num >= 1000) return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return num.toFixed(2);
+    return formatBalance(formatUnits(rawBalance, 18));
   } catch {
-    return "0.00";
+    return "0.000";
   }
 }
 
@@ -76,7 +73,7 @@ export function useWallet() {
       const network = await provider.getNetwork();
       const chainId = "0x" + network.chainId.toString(16);
       const onArc = isOnArcTestnet(chainId);
-      const usdcBalance = onArc ? await fetchUsdcBalance(accounts[0]) : "0.00";
+      const usdcBalance = onArc ? await fetchUsdcBalance(accounts[0]) : "0.000";
 
       setState({
         status: "connected",
@@ -186,3 +183,4 @@ export function useWallet() {
     isMetaMaskAvailable: getRawEthereum() !== null,
   };
 }
+

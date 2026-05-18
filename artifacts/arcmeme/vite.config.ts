@@ -29,7 +29,31 @@ if (!basePath) {
 const apiProxyTarget =
   process.env.API_PROXY_TARGET ??
   process.env.VITE_API_PROXY_TARGET ??
-  "http://localhost:8080";
+  "http://localhost:3000";
+
+const apiProxy = {
+  target: apiProxyTarget,
+  changeOrigin: true,
+  secure: false,
+  configure(proxy) {
+    proxy.on("error", (err, _req, res) => {
+      console.error("[vite proxy] /api proxy error", {
+        target: apiProxyTarget,
+        message: err.message,
+      });
+      if (!res.headersSent) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+      }
+      res.end(
+        JSON.stringify({
+          error: "Vite API proxy failed",
+          target: apiProxyTarget,
+          message: err.message,
+        }),
+      );
+    });
+  },
+} satisfies NonNullable<NonNullable<ReturnType<typeof defineConfig>["server"]>["proxy"]>[string];
 
 export default defineConfig({
   base: basePath,
@@ -72,15 +96,15 @@ export default defineConfig({
       strict: true,
     },
     proxy: {
-      "/api": {
-        target: apiProxyTarget,
-        changeOrigin: true,
-      },
+      "/api": apiProxy,
     },
   },
   preview: {
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      "/api": apiProxy,
+    },
   },
 });
