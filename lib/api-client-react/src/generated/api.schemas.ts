@@ -72,6 +72,21 @@ export interface ChartPoint {
   volume: number;
 }
 
+export interface Trade {
+  id: string;
+  tokenId: string;
+  pairAddress: string;
+  txHash: string;
+  logIndex: number;
+  blockNumber: number;
+  side: "buy" | "sell";
+  tokenAmount: number;
+  wusdcAmount: number;
+  executionPrice: number;
+  traderAddress: string;
+  timestamp: string;
+}
+
 export interface PlatformStats {
   totalTokens: number;
   totalVolume24h: number;

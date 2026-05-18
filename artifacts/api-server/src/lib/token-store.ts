@@ -28,6 +28,21 @@ export type Token = {
   telegram: string | null;
 };
 
+export type Trade = {
+  id: string;
+  tokenId: string;
+  pairAddress: string;
+  txHash: string;
+  logIndex: number;
+  blockNumber: number;
+  side: "buy" | "sell";
+  tokenAmount: number;
+  wusdcAmount: number;
+  executionPrice: number;
+  traderAddress: string;
+  timestamp: string;
+};
+
 type TokenInput = Omit<Token, "id" | "createdAt" | "marketType" | "pairAddress" | "routerAddress"> & {
   id?: string;
   createdAt?: string;
@@ -368,6 +383,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS tokens_volume24h_idx ON tokens(volume24h);
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trades (
+    id TEXT PRIMARY KEY,
+    tokenId TEXT NOT NULL,
+    pairAddress TEXT NOT NULL,
+    txHash TEXT NOT NULL,
+    logIndex INTEGER NOT NULL,
+    blockNumber INTEGER NOT NULL,
+    side TEXT NOT NULL,
+    tokenAmount REAL NOT NULL,
+    wusdcAmount REAL NOT NULL,
+    executionPrice REAL NOT NULL,
+    traderAddress TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS trades_tokenId_blockNumber_idx ON trades(tokenId, blockNumber DESC);
+  CREATE INDEX IF NOT EXISTS trades_pairAddress_idx ON trades(pairAddress);
+`);
+
 const tokenColumns = `
   id, name, ticker, price, marketCap, volume24h, change24h, description,
   createdAt, creatorAddress, logoColor, logoUrl, contractAddress, marketType,
@@ -382,6 +417,17 @@ const insertStatement = db.prepare(`
     $description, $createdAt, $creatorAddress, $logoColor, $logoUrl,
     $contractAddress, $marketType, $pairAddress, $routerAddress, $totalSupply,
     $holders, $txCount, $website, $twitter, $telegram
+  )
+`);
+
+const insertTradeStatement = db.prepare(`
+  INSERT OR IGNORE INTO trades (
+    id, tokenId, pairAddress, txHash, logIndex, blockNumber, side,
+    tokenAmount, wusdcAmount, executionPrice, traderAddress, timestamp
+  )
+  VALUES (
+    $id, $tokenId, $pairAddress, $txHash, $logIndex, $blockNumber, $side,
+    $tokenAmount, $wusdcAmount, $executionPrice, $traderAddress, $timestamp
   )
 `);
 
@@ -439,6 +485,54 @@ function saveToken(token: Token) {
   });
 }
 
+function rowToTrade(row: Record<string, unknown>): Trade {
+  return {
+    id: String(row.id),
+    tokenId: String(row.tokenId),
+    pairAddress: String(row.pairAddress),
+    txHash: String(row.txHash),
+    logIndex: Number(row.logIndex),
+    blockNumber: Number(row.blockNumber),
+    side: row.side === "sell" ? "sell" : "buy",
+    tokenAmount: Number(row.tokenAmount),
+    wusdcAmount: Number(row.wusdcAmount),
+    executionPrice: Number(row.executionPrice),
+    traderAddress: String(row.traderAddress),
+    timestamp: String(row.timestamp),
+  };
+}
+
+export function saveTrades(trades: Trade[]) {
+  if (trades.length === 0) return 0;
+
+  db.exec("BEGIN");
+  let inserted = 0;
+  try {
+    for (const trade of trades) {
+      const result = insertTradeStatement.run({
+        $id: trade.id,
+        $tokenId: trade.tokenId,
+        $pairAddress: trade.pairAddress,
+        $txHash: trade.txHash,
+        $logIndex: trade.logIndex,
+        $blockNumber: trade.blockNumber,
+        $side: trade.side,
+        $tokenAmount: trade.tokenAmount,
+        $wusdcAmount: trade.wusdcAmount,
+        $executionPrice: trade.executionPrice,
+        $traderAddress: trade.traderAddress,
+        $timestamp: trade.timestamp,
+      });
+      inserted += Number(result.changes);
+    }
+    db.exec("COMMIT");
+    return inserted;
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
 function seedInitialTokens() {
   const row = countStatement.get() as { count: number };
   if (row.count > 0) return;
@@ -480,6 +574,22 @@ export function getTokens(): Token[] {
     .all() as Record<string, unknown>[];
 
   return rows.map(rowToToken);
+}
+
+export function listTrades(tokenId: string, limit = 50): Trade[] {
+  const rows = db
+    .prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber DESC, logIndex DESC LIMIT ?")
+    .all(tokenId, limit) as Record<string, unknown>[];
+
+  return rows.map(rowToTrade);
+}
+
+export function getLatestTradeBlock(tokenId: string): number | null {
+  const row = db
+    .prepare("SELECT MAX(blockNumber) AS blockNumber FROM trades WHERE tokenId = ?")
+    .get(tokenId) as { blockNumber: number | null } | undefined;
+
+  return row?.blockNumber ?? null;
 }
 
 export function getToken(id: string): Token | null {

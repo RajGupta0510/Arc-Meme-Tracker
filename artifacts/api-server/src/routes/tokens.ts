@@ -8,11 +8,13 @@ import {
 import {
   createToken,
   getToken,
+  listTrades,
   listTokens,
   updateTokenMarket,
   type Token,
 } from "../lib/token-store";
 import { logger } from "../lib/logger";
+import { indexTokenSwapEvents } from "../lib/swap-indexer";
 
 const router: IRouter = Router();
 
@@ -244,6 +246,46 @@ router.patch("/tokens/:id/market", async (req, res): Promise<void> => {
     const details = getErrorPayload(err);
     logger.error({ err, id: req.params.id, body: req.body }, "PATCH /api/tokens/:id/market failed");
     res.status(503).json(details);
+  }
+});
+
+router.get("/tokens/:id/trades", async (req, res): Promise<void> => {
+  try {
+    const params = GetTokenParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const token = getToken(params.data.id);
+    if (!token) {
+      res.status(404).json({ error: "Token not found" });
+      return;
+    }
+
+    if (token.marketType === "amm_pool" && token.pairAddress && token.contractAddress) {
+      try {
+        const result = await indexTokenSwapEvents(token);
+        logger.info({ id: token.id, pairAddress: token.pairAddress, ...result }, "GET /api/tokens/:id/trades indexed swaps");
+      } catch (err) {
+        logger.error(
+          {
+            err,
+            id: token.id,
+            pairAddress: token.pairAddress,
+            contractAddress: token.contractAddress,
+          },
+          "Swap indexing failed; returning cached trades",
+        );
+        res.setHeader("x-arcmeme-indexing-error", err instanceof Error ? err.message : "Unknown indexing error");
+      }
+    }
+
+    res.json(listTrades(token.id, 50));
+  } catch (err) {
+    const details = getErrorPayload(err);
+    logger.error({ err, id: req.params.id }, "GET /api/tokens/:id/trades failed");
+    res.status(200).json([]);
   }
 });
 

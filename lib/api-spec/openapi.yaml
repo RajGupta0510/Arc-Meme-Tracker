@@ -136,6 +136,29 @@ paths:
         "404":
           description: Not found
 
+  /tokens/{id}/trades:
+    get:
+      operationId: getTokenTrades
+      tags: [tokens]
+      summary: Get recent token trades
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Recent trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+        "404":
+          description: Not found
+
   /tokens/{id}/chart:
     get:
       operationId: getTokenChart
@@ -284,6 +307,48 @@ components:
           type: ["string", "null"]
         routerAddress:
           type: ["string", "null"]
+
+    Trade:
+      type: object
+      required:
+        - id
+        - tokenId
+        - pairAddress
+        - txHash
+        - logIndex
+        - blockNumber
+        - side
+        - tokenAmount
+        - wusdcAmount
+        - executionPrice
+        - traderAddress
+        - timestamp
+      properties:
+        id:
+          type: string
+        tokenId:
+          type: string
+        pairAddress:
+          type: string
+        txHash:
+          type: string
+        logIndex:
+          type: integer
+        blockNumber:
+          type: integer
+        side:
+          type: string
+          enum: [buy, sell]
+        tokenAmount:
+          type: number
+        wusdcAmount:
+          type: number
+        executionPrice:
+          type: number
+        traderAddress:
+          type: string
+        timestamp:
+          type: string
 
     ChartPoint:
       type: object

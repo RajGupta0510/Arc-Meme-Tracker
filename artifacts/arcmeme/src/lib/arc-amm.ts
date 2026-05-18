@@ -341,6 +341,18 @@ export function calculateAmountOut(
   return (amountInWithFee * reserveOut) / (reserveIn * feeDenominator + amountInWithFee);
 }
 
+export function calculateAmountIn(
+  amountOut: bigint,
+  reserveIn: bigint,
+  reserveOut: bigint,
+  feeBps = 30,
+) {
+  if (amountOut <= 0n || reserveIn <= 0n || reserveOut <= 0n || amountOut >= reserveOut) return 0n;
+  const feeDenominator = 10_000n;
+  const feeNumerator = BigInt(10_000 - feeBps);
+  return (reserveIn * amountOut * feeDenominator) / ((reserveOut - amountOut) * feeNumerator) + 1n;
+}
+
 export async function quoteTokenUsdcBuy(
   tokenAddress: string,
   usdcAmount: string,

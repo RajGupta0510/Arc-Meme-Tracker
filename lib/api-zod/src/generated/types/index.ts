@@ -13,3 +13,4 @@ export * from "./listTokensSort";
 export * from "./platformStats";
 export * from "./token";
 export * from "./tokenInput";
+export * from "./trade";

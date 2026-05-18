@@ -1,5 +1,6 @@
 import { useParams } from "wouter";
-import { useGetToken, useGetTokenChart, getGetTokenQueryKey, getGetTokenChartQueryKey } from "@workspace/api-client-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useGetToken, useGetTokenChart, getGetTokenQueryKey, getGetTokenChartQueryKey, type Trade } from "@workspace/api-client-react";
 import { TokenLogo } from "@/components/token-card";
 import { formatCompactNumber, formatAddress, formatBalance } from "@/lib/utils";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -11,11 +12,13 @@ import { useWallet } from "@/hooks/use-wallet";
 import { useTokenMarket } from "@/hooks/use-token-market";
 import { useTokenTrade } from "@/hooks/use-token-trade";
 import { Loader2 } from "lucide-react";
-import { formatUnits } from "ethers";
+import { formatUnits, parseUnits } from "ethers";
+import { calculateAmountIn, calculateAmountOut } from "@/lib/arc-amm";
 
 export function TokenDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { state, refresh: refreshWallet } = useWallet();
+  const queryClient = useQueryClient();
 
   const { data: token, isLoading: tokenLoading, isError: tokenError, refetch: refetchToken } = useGetToken(id!, {
     query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
@@ -25,8 +28,39 @@ export function TokenDetailPage() {
     query: { enabled: !!id, queryKey: getGetTokenChartQueryKey(id!) },
   });
 
+  const tradesQueryKey = ["token-trades", id] as const;
+  const { data: trades = [], isLoading: tradesLoading, isError: tradesError } = useQuery({
+    queryKey: tradesQueryKey,
+    enabled: !!id,
+    queryFn: async () => {
+      try {
+        const response = await fetch(`/api/tokens/${encodeURIComponent(id!)}/trades`);
+        const indexingError = response.headers.get("x-arcmeme-indexing-error");
+        if (indexingError) {
+          console.warn("[trades] Backend indexing error", indexingError);
+        }
+        if (!response.ok) {
+          const body = await response.text();
+          console.error("[trades] Failed to load trades", response.status, body);
+          return [];
+        }
+        const data = await response.json();
+        if (!Array.isArray(data)) {
+          console.error("[trades] Unexpected trades payload", data);
+          return [];
+        }
+        return data as Trade[];
+      } catch (error) {
+        console.error("[trades] Request failed", error);
+        return [];
+      }
+    },
+    refetchInterval: token?.marketType === "amm_pool" ? 15000 : false,
+  });
+
   const [tradeTab, setTradeTab] = useState<"buy" | "sell">("buy");
-  const [tradeAmount, setTradeAmount] = useState("");
+  const [tradeInputAmount, setTradeInputAmount] = useState("");
+  const [tradeOutputAmount, setTradeOutputAmount] = useState("");
   const walletAddress = state.status === "connected" ? state.address : undefined;
   const market = useTokenMarket(token, walletAddress);
   const trade = useTokenTrade();
@@ -87,32 +121,77 @@ export function TokenDetailPage() {
     state.isArcTestnet &&
     market.isTradeable &&
     market.reserves !== null &&
-    Number(tradeAmount) > 0 &&
+    Number(tradeInputAmount) > 0 &&
     !isTradingPending;
 
-  const estimatedTokens = tradeAmount && displayedPrice > 0
-    ? tradeTab === "buy"
-      ? (parseFloat(tradeAmount) / displayedPrice).toLocaleString(undefined, {
-          maximumFractionDigits: 4,
-        })
-      : (parseFloat(tradeAmount) * displayedPrice).toLocaleString(undefined, {
-          maximumFractionDigits: 4,
-        })
-    : null;
+  const formatSwapAmount = (value: bigint, decimals: number) => {
+    const number = Number(formatUnits(value, decimals));
+    if (!Number.isFinite(number) || number <= 0) return "";
+    if (number < 0.001) return number.toPrecision(4);
+    return formatBalance(number);
+  };
+
+  const quoteFromInput = (amount: string) => {
+    if (!market.reserves || !amount || Number(amount) <= 0) return "";
+    try {
+      if (tradeTab === "buy") {
+        const amountIn = parseUnits(amount, 18);
+        const amountOut = calculateAmountOut(amountIn, market.reserves.quoteReserve, market.reserves.baseReserve);
+        return formatSwapAmount(amountOut, market.tokenDecimals);
+      }
+
+      const amountIn = parseUnits(amount, market.tokenDecimals);
+      const amountOut = calculateAmountOut(amountIn, market.reserves.baseReserve, market.reserves.quoteReserve);
+      return formatSwapAmount(amountOut, 18);
+    } catch {
+      return "";
+    }
+  };
+
+  const inputFromOutput = (amount: string) => {
+    if (!market.reserves || !amount || Number(amount) <= 0) return "";
+    try {
+      if (tradeTab === "buy") {
+        const amountOut = parseUnits(amount, market.tokenDecimals);
+        const amountIn = calculateAmountIn(amountOut, market.reserves.quoteReserve, market.reserves.baseReserve);
+        return formatSwapAmount(amountIn, 18);
+      }
+
+      const amountOut = parseUnits(amount, 18);
+      const amountIn = calculateAmountIn(amountOut, market.reserves.baseReserve, market.reserves.quoteReserve);
+      return formatSwapAmount(amountIn, market.tokenDecimals);
+    } catch {
+      return "";
+    }
+  };
+
+  const handleInputAmountChange = (amount: string) => {
+    setTradeInputAmount(amount);
+    setTradeOutputAmount(quoteFromInput(amount));
+    trade.reset();
+  };
+
+  const handleOutputAmountChange = (amount: string) => {
+    setTradeOutputAmount(amount);
+    setTradeInputAmount(inputFromOutput(amount));
+    trade.reset();
+  };
 
   const handleTrade = async () => {
     if (!market.reserves) return;
     const txHash = await trade.executeTrade({
       token,
       side: tradeTab,
-      amount: tradeAmount,
+      amount: tradeInputAmount,
       reserves: market.reserves,
       tokenDecimals: market.tokenDecimals,
       amm: market.amm,
     });
 
     if (!txHash) return;
-    setTradeAmount("");
+    setTradeInputAmount("");
+    setTradeOutputAmount("");
+    await queryClient.invalidateQueries({ queryKey: tradesQueryKey });
     await Promise.all([market.refresh(), refreshWallet()]);
   };
 
@@ -362,7 +441,12 @@ export function TokenDetailPage() {
             <div className="flex bg-secondary/50 p-1 rounded-md">
               <Button
                 variant="ghost"
-                onClick={() => setTradeTab("buy")}
+                onClick={() => {
+                  setTradeTab("buy");
+                  setTradeInputAmount("");
+                  setTradeOutputAmount("");
+                  trade.reset();
+                }}
                 className={`flex-1 h-8 text-xs font-bold transition-colors ${
                   tradeTab === "buy"
                     ? "bg-background shadow-sm text-primary"
@@ -374,7 +458,12 @@ export function TokenDetailPage() {
               </Button>
               <Button
                 variant="ghost"
-                onClick={() => setTradeTab("sell")}
+                onClick={() => {
+                  setTradeTab("sell");
+                  setTradeInputAmount("");
+                  setTradeOutputAmount("");
+                  trade.reset();
+                }}
                 className={`flex-1 h-8 text-xs font-bold transition-colors ${
                   tradeTab === "sell"
                     ? "bg-background shadow-sm text-destructive"
@@ -386,11 +475,11 @@ export function TokenDetailPage() {
               </Button>
             </div>
 
-            {/* Amount input */}
+            {/* Quote inputs */}
             <div className="space-y-2">
               <div className="flex justify-between text-xs font-mono">
                 <span className="text-muted-foreground">
-                  Amount ({tradeTab === "buy" ? "USDC" : token.ticker})
+                  You pay ({tradeTab === "buy" ? "USDC" : token.ticker})
                 </span>
                 <span className="text-muted-foreground">
                   Balance:{" "}
@@ -407,13 +496,37 @@ export function TokenDetailPage() {
                 <Input
                   type="number"
                   placeholder="0.00"
-                  value={tradeAmount}
-                  onChange={(e) => setTradeAmount(e.target.value)}
+                  value={tradeInputAmount}
+                  onChange={(e) => handleInputAmountChange(e.target.value)}
                   className="font-mono text-lg bg-background/50 h-12 pr-20"
                   data-testid="input-trade-amount"
                 />
                 <div className="absolute right-3 top-3 font-mono text-xs font-bold text-muted-foreground tracking-wider">
                   {tradeTab === "buy" ? "USDC" : token.ticker}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-muted-foreground">
+                    You receive ({tradeTab === "buy" ? token.ticker : "USDC"})
+                  </span>
+                  <span className="text-muted-foreground">
+                    reserve quote
+                  </span>
+                </div>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    value={tradeOutputAmount}
+                    onChange={(e) => handleOutputAmountChange(e.target.value)}
+                    className="font-mono text-lg bg-background/50 h-12 pr-20"
+                    data-testid="input-trade-output-amount"
+                  />
+                  <div className="absolute right-3 top-3 font-mono text-xs font-bold text-muted-foreground tracking-wider">
+                    {tradeTab === "buy" ? token.ticker : "USDC"}
+                  </div>
                 </div>
               </div>
 
@@ -425,7 +538,7 @@ export function TokenDetailPage() {
                       key={pct}
                       onClick={() => {
                         if (numericActiveBalance !== null) {
-                          setTradeAmount(formatBalance((numericActiveBalance * pct) / 100));
+                          handleInputAmountChange(formatBalance((numericActiveBalance * pct) / 100));
                         }
                       }}
                       className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
@@ -435,7 +548,7 @@ export function TokenDetailPage() {
                     </button>
                   ))}
                   <button
-                    onClick={() => activeBalance && setTradeAmount(formatBalance(activeBalance))}
+                    onClick={() => activeBalance && handleInputAmountChange(formatBalance(activeBalance))}
                     className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                     data-testid="button-fill-max"
                   >
@@ -444,11 +557,9 @@ export function TokenDetailPage() {
                 </div>
               )}
 
-              {estimatedTokens && (
-                <div className="text-xs font-mono text-muted-foreground text-right">
-                  ≈ {estimatedTokens} {tradeTab === "buy" ? token.ticker : "USDC"}
-                </div>
-              )}
+              <div className="text-xs font-mono text-muted-foreground text-right">
+                {market.reserves ? "Quote uses current pool reserves" : "Waiting for pool reserves"}
+              </div>
               {market.error && (
                 <div className="text-xs font-mono text-destructive text-right">
                   Market refresh failed: {market.error}
@@ -533,6 +644,49 @@ export function TokenDetailPage() {
               <p className="text-[10px] text-muted-foreground text-center">
                 Create a liquidity pool before real swaps are available.
               </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border bg-card/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm uppercase tracking-wider">Recent Trades</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {tradesLoading ? (
+              <div className="p-4 text-xs font-mono text-muted-foreground">Indexing swaps...</div>
+            ) : tradesError ? (
+              <div className="p-4 text-xs font-mono text-destructive">Could not load trades.</div>
+            ) : trades.length > 0 ? (
+              <div className="divide-y divide-border/50">
+                {trades.slice(0, 8).map((tradeItem) => (
+                  <a
+                    key={tradeItem.id}
+                    href={`https://testnet.arcscan.app/tx/${tradeItem.txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="grid grid-cols-[56px_1fr] gap-3 p-3 text-xs font-mono hover:bg-secondary/30 transition-colors"
+                  >
+                    <span className={tradeItem.side === "buy" ? "text-primary font-bold uppercase" : "text-destructive font-bold uppercase"}>
+                      {tradeItem.side}
+                    </span>
+                    <span className="min-w-0 space-y-1">
+                      <span className="flex justify-between gap-2">
+                        <span className="truncate">{formatBalance(tradeItem.tokenAmount)} {token.ticker}</span>
+                        <span className="text-muted-foreground">${formatBalance(tradeItem.wusdcAmount)}</span>
+                      </span>
+                      <span className="flex justify-between gap-2 text-[10px] text-muted-foreground">
+                        <span className="truncate">{formatAddress(tradeItem.traderAddress)}</span>
+                        <span>${tradeItem.executionPrice.toFixed(6)}</span>
+                      </span>
+                    </span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 text-xs font-mono text-muted-foreground">
+                No on-chain swaps indexed yet.
+              </div>
             )}
           </CardContent>
         </Card>

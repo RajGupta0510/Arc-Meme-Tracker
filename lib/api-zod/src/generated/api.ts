@@ -134,6 +134,29 @@ export const GetTokenResponse = zod.object({
 });
 
 /**
+ * @summary Get recent token trades
+ */
+export const GetTokenTradesParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetTokenTradesResponseItem = zod.object({
+  id: zod.string(),
+  tokenId: zod.string(),
+  pairAddress: zod.string(),
+  txHash: zod.string(),
+  logIndex: zod.number(),
+  blockNumber: zod.number(),
+  side: zod.enum(["buy", "sell"]),
+  tokenAmount: zod.number(),
+  wusdcAmount: zod.number(),
+  executionPrice: zod.number(),
+  traderAddress: zod.string(),
+  timestamp: zod.string(),
+});
+export const GetTokenTradesResponse = zod.array(GetTokenTradesResponseItem);
+
+/**
  * @summary Get chart data for a token
  */
 export const GetTokenChartParams = zod.object({
