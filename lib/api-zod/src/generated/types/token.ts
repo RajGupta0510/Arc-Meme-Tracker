@@ -5,6 +5,7 @@
  * ArcMeme.fun API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { TokenMarketType } from "./tokenMarketType";
 
 export interface Token {
   id: string;
@@ -22,7 +23,7 @@ export interface Token {
   logoUrl?: string | null;
   /** @nullable */
   contractAddress?: string | null;
-  marketType?: "unlisted" | "amm_pool";
+  marketType?: TokenMarketType;
   /** @nullable */
   pairAddress?: string | null;
   /** @nullable */

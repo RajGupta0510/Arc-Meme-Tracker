@@ -159,6 +159,36 @@ paths:
         "404":
           description: Not found
 
+  /tokens/{id}/candles:
+    get:
+      operationId: getTokenCandles
+      tags: [tokens]
+      summary: Get OHLC candles for a token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: interval
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1m, 5m, 15m, 1h, 4h]
+            default: 1m
+      responses:
+        "200":
+          description: OHLC candles generated from indexed swaps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Candle"
+        "404":
+          description: Not found
+
   /tokens/{id}/chart:
     get:
       operationId: getTokenChart
@@ -292,6 +322,14 @@ components:
           type: string
         logoColor:
           type: string
+        logoImage:
+          type: string
+        totalSupply:
+          type: number
+        contractAddress:
+          type: string
+        creatorAddress:
+          type: string
 
     TokenMarketInput:
       type: object
@@ -361,6 +399,29 @@ components:
         - volume
       properties:
         timestamp:
+          type: integer
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+
+    Candle:
+      type: object
+      required:
+        - time
+        - open
+        - high
+        - low
+        - close
+        - volume
+      properties:
+        time:
           type: integer
         open:
           type: number

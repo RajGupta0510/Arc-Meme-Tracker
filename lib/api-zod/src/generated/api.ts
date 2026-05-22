@@ -134,6 +134,44 @@ export const GetTokenResponse = zod.object({
 });
 
 /**
+ * @summary Update token market metadata
+ */
+export const UpdateTokenMarketParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateTokenMarketBody = zod.object({
+  marketType: zod.enum(["unlisted", "amm_pool"]),
+  pairAddress: zod.string().nullable(),
+  routerAddress: zod.string().nullable(),
+});
+
+export const UpdateTokenMarketResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  ticker: zod.string(),
+  price: zod.number(),
+  marketCap: zod.number(),
+  volume24h: zod.number(),
+  change24h: zod.number(),
+  description: zod.string(),
+  createdAt: zod.string(),
+  creatorAddress: zod.string(),
+  logoColor: zod.string(),
+  logoUrl: zod.string().nullish(),
+  contractAddress: zod.string().nullish(),
+  marketType: zod.enum(["unlisted", "amm_pool"]).optional(),
+  pairAddress: zod.string().nullish(),
+  routerAddress: zod.string().nullish(),
+  totalSupply: zod.number(),
+  holders: zod.number(),
+  txCount: zod.number(),
+  website: zod.string().nullish(),
+  twitter: zod.string().nullish(),
+  telegram: zod.string().nullish(),
+});
+
+/**
  * @summary Get recent token trades
  */
 export const GetTokenTradesParams = zod.object({
@@ -155,6 +193,31 @@ export const GetTokenTradesResponseItem = zod.object({
   timestamp: zod.string(),
 });
 export const GetTokenTradesResponse = zod.array(GetTokenTradesResponseItem);
+
+/**
+ * @summary Get OHLC candles for a token
+ */
+export const GetTokenCandlesParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const getTokenCandlesQueryIntervalDefault = `1m`;
+
+export const GetTokenCandlesQueryParams = zod.object({
+  interval: zod
+    .enum(["1m", "5m", "15m", "1h", "4h"])
+    .default(getTokenCandlesQueryIntervalDefault),
+});
+
+export const GetTokenCandlesResponseItem = zod.object({
+  time: zod.number(),
+  open: zod.number(),
+  high: zod.number(),
+  low: zod.number(),
+  close: zod.number(),
+  volume: zod.number(),
+});
+export const GetTokenCandlesResponse = zod.array(GetTokenCandlesResponseItem);
 
 /**
  * @summary Get chart data for a token

@@ -17,12 +17,16 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  Candle,
   ChartPoint,
+  GetTokenCandlesParams,
   HealthStatus,
   ListTokensParams,
   PlatformStats,
   Token,
   TokenInput,
+  TokenMarketInput,
+  Trade,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -442,6 +446,289 @@ export function useGetToken<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetTokenQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update token market metadata
+ */
+export const getUpdateTokenMarketUrl = (id: string) => {
+  return `/api/tokens/${id}/market`;
+};
+
+export const updateTokenMarket = async (
+  id: string,
+  tokenMarketInput: TokenMarketInput,
+  options?: RequestInit,
+): Promise<Token> => {
+  return customFetch<Token>(getUpdateTokenMarketUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(tokenMarketInput),
+  });
+};
+
+export const getUpdateTokenMarketMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTokenMarket>>,
+    TError,
+    { id: string; data: BodyType<TokenMarketInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTokenMarket>>,
+  TError,
+  { id: string; data: BodyType<TokenMarketInput> },
+  TContext
+> => {
+  const mutationKey = ["updateTokenMarket"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTokenMarket>>,
+    { id: string; data: BodyType<TokenMarketInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateTokenMarket(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTokenMarketMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTokenMarket>>
+>;
+export type UpdateTokenMarketMutationBody = BodyType<TokenMarketInput>;
+export type UpdateTokenMarketMutationError = ErrorType<void>;
+
+/**
+ * @summary Update token market metadata
+ */
+export const useUpdateTokenMarket = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTokenMarket>>,
+    TError,
+    { id: string; data: BodyType<TokenMarketInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTokenMarket>>,
+  TError,
+  { id: string; data: BodyType<TokenMarketInput> },
+  TContext
+> => {
+  return useMutation(getUpdateTokenMarketMutationOptions(options));
+};
+
+/**
+ * @summary Get recent token trades
+ */
+export const getGetTokenTradesUrl = (id: string) => {
+  return `/api/tokens/${id}/trades`;
+};
+
+export const getTokenTrades = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Trade[]> => {
+  return customFetch<Trade[]>(getGetTokenTradesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTokenTradesQueryKey = (id: string) => {
+  return [`/api/tokens/${id}/trades`] as const;
+};
+
+export const getGetTokenTradesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTokenTrades>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTokenTrades>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTokenTradesQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTokenTrades>>> = ({
+    signal,
+  }) => getTokenTrades(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTokenTrades>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTokenTradesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTokenTrades>>
+>;
+export type GetTokenTradesQueryError = ErrorType<void>;
+
+/**
+ * @summary Get recent token trades
+ */
+
+export function useGetTokenTrades<
+  TData = Awaited<ReturnType<typeof getTokenTrades>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTokenTrades>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTokenTradesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get OHLC candles for a token
+ */
+export const getGetTokenCandlesUrl = (
+  id: string,
+  params?: GetTokenCandlesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/tokens/${id}/candles?${stringifiedParams}`
+    : `/api/tokens/${id}/candles`;
+};
+
+export const getTokenCandles = async (
+  id: string,
+  params?: GetTokenCandlesParams,
+  options?: RequestInit,
+): Promise<Candle[]> => {
+  return customFetch<Candle[]>(getGetTokenCandlesUrl(id, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTokenCandlesQueryKey = (
+  id: string,
+  params?: GetTokenCandlesParams,
+) => {
+  return [`/api/tokens/${id}/candles`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetTokenCandlesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTokenCandles>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  params?: GetTokenCandlesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTokenCandles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTokenCandlesQueryKey(id, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTokenCandles>>> = ({
+    signal,
+  }) => getTokenCandles(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTokenCandles>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTokenCandlesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTokenCandles>>
+>;
+export type GetTokenCandlesQueryError = ErrorType<void>;
+
+/**
+ * @summary Get OHLC candles for a token
+ */
+
+export function useGetTokenCandles<
+  TData = Awaited<ReturnType<typeof getTokenCandles>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  params?: GetTokenCandlesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTokenCandles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTokenCandlesQueryOptions(id, params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

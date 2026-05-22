@@ -9,6 +9,14 @@ export interface HealthStatus {
   status: string;
 }
 
+export type TokenMarketType =
+  (typeof TokenMarketType)[keyof typeof TokenMarketType];
+
+export const TokenMarketType = {
+  unlisted: "unlisted",
+  amm_pool: "amm_pool",
+} as const;
+
 export interface Token {
   id: string;
   name: string;
@@ -25,7 +33,7 @@ export interface Token {
   logoUrl?: string | null;
   /** @nullable */
   contractAddress?: string | null;
-  marketType?: "unlisted" | "amm_pool";
+  marketType?: TokenMarketType;
   /** @nullable */
   pairAddress?: string | null;
   /** @nullable */
@@ -63,6 +71,44 @@ export interface TokenInput {
   creatorAddress?: string;
 }
 
+export type TokenMarketInputMarketType =
+  (typeof TokenMarketInputMarketType)[keyof typeof TokenMarketInputMarketType];
+
+export const TokenMarketInputMarketType = {
+  unlisted: "unlisted",
+  amm_pool: "amm_pool",
+} as const;
+
+export interface TokenMarketInput {
+  marketType: TokenMarketInputMarketType;
+  /** @nullable */
+  pairAddress: string | null;
+  /** @nullable */
+  routerAddress: string | null;
+}
+
+export type TradeSide = (typeof TradeSide)[keyof typeof TradeSide];
+
+export const TradeSide = {
+  buy: "buy",
+  sell: "sell",
+} as const;
+
+export interface Trade {
+  id: string;
+  tokenId: string;
+  pairAddress: string;
+  txHash: string;
+  logIndex: number;
+  blockNumber: number;
+  side: TradeSide;
+  tokenAmount: number;
+  wusdcAmount: number;
+  executionPrice: number;
+  traderAddress: string;
+  timestamp: string;
+}
+
 export interface ChartPoint {
   timestamp: number;
   open: number;
@@ -72,19 +118,13 @@ export interface ChartPoint {
   volume: number;
 }
 
-export interface Trade {
-  id: string;
-  tokenId: string;
-  pairAddress: string;
-  txHash: string;
-  logIndex: number;
-  blockNumber: number;
-  side: "buy" | "sell";
-  tokenAmount: number;
-  wusdcAmount: number;
-  executionPrice: number;
-  traderAddress: string;
-  timestamp: string;
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 export interface PlatformStats {
@@ -108,4 +148,19 @@ export const ListTokensSort = {
   newest: "newest",
   marketCap: "marketCap",
   volume: "volume",
+} as const;
+
+export type GetTokenCandlesParams = {
+  interval?: GetTokenCandlesInterval;
+};
+
+export type GetTokenCandlesInterval =
+  (typeof GetTokenCandlesInterval)[keyof typeof GetTokenCandlesInterval];
+
+export const GetTokenCandlesInterval = {
+  "1m": "1m",
+  "5m": "5m",
+  "15m": "15m",
+  "1h": "1h",
+  "4h": "4h",
 } as const;

@@ -43,6 +43,17 @@ export type Trade = {
   timestamp: string;
 };
 
+export type CandleInterval = "1m" | "5m" | "15m" | "1h" | "4h";
+
+export type Candle = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
 type TokenInput = Omit<Token, "id" | "createdAt" | "marketType" | "pairAddress" | "routerAddress"> & {
   id?: string;
   createdAt?: string;
@@ -408,6 +419,7 @@ const tokenColumns = `
   createdAt, creatorAddress, logoColor, logoUrl, contractAddress, marketType,
   pairAddress, routerAddress, totalSupply, holders, txCount, website, twitter, telegram
 `;
+const launchedTokenWhere = "contractAddress IS NOT NULL AND contractAddress != ''";
 
 const countStatement = db.prepare("SELECT COUNT(*) AS count FROM tokens");
 const insertStatement = db.prepare(`
@@ -434,8 +446,8 @@ const insertTradeStatement = db.prepare(`
 function rowToToken(row: Record<string, unknown>): Token {
   return {
     id: String(row.id),
-    name: String(row.name),
-    ticker: String(row.ticker),
+    name: String(row.name).trim(),
+    ticker: String(row.ticker).trim(),
     price: Number(row.price),
     marketCap: Number(row.marketCap),
     volume24h: Number(row.volume24h),
@@ -562,7 +574,7 @@ export function listTokens(sort = "trending", limit = 50): Token[] {
           : "change24h DESC";
 
   const rows = db
-    .prepare(`SELECT ${tokenColumns} FROM tokens ORDER BY ${orderBy} LIMIT ?`)
+    .prepare(`SELECT ${tokenColumns} FROM tokens WHERE ${launchedTokenWhere} ORDER BY ${orderBy} LIMIT ?`)
     .all(limit) as Record<string, unknown>[];
 
   return rows.map(rowToToken);
@@ -570,7 +582,7 @@ export function listTokens(sort = "trending", limit = 50): Token[] {
 
 export function getTokens(): Token[] {
   const rows = db
-    .prepare(`SELECT ${tokenColumns} FROM tokens`)
+    .prepare(`SELECT ${tokenColumns} FROM tokens WHERE ${launchedTokenWhere}`)
     .all() as Record<string, unknown>[];
 
   return rows.map(rowToToken);
@@ -582,6 +594,63 @@ export function listTrades(tokenId: string, limit = 50): Trade[] {
     .all(tokenId, limit) as Record<string, unknown>[];
 
   return rows.map(rowToTrade);
+}
+
+const candleIntervalSeconds: Record<CandleInterval, number> = {
+  "1m": 60,
+  "5m": 5 * 60,
+  "15m": 15 * 60,
+  "1h": 60 * 60,
+  "4h": 4 * 60 * 60,
+};
+
+export function isCandleInterval(value: unknown): value is CandleInterval {
+  return typeof value === "string" && value in candleIntervalSeconds;
+}
+
+export function listCandles(tokenId: string, interval: CandleInterval): Candle[] {
+  const trades = db
+    .prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber ASC, logIndex ASC")
+    .all(tokenId) as Record<string, unknown>[];
+
+  const bucketSeconds = candleIntervalSeconds[interval];
+  const buckets = new Map<number, Candle>();
+
+  for (const trade of trades.map(rowToTrade)) {
+    const tradeTime = Math.floor(new Date(trade.timestamp).getTime() / 1000);
+    if (!Number.isFinite(tradeTime)) continue;
+
+    const bucketTime = Math.floor(tradeTime / bucketSeconds) * bucketSeconds;
+    const price = trade.executionPrice;
+    const volume = trade.wusdcAmount;
+    const existing = buckets.get(bucketTime);
+
+    if (!existing) {
+      buckets.set(bucketTime, {
+        time: bucketTime,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume,
+      });
+      continue;
+    }
+
+    existing.high = Math.max(existing.high, price);
+    existing.low = Math.min(existing.low, price);
+    existing.close = price;
+    existing.volume += volume;
+  }
+
+  return Array.from(buckets.values()).map((candle) => ({
+    ...candle,
+    open: Number(candle.open.toPrecision(12)),
+    high: Number(candle.high.toPrecision(12)),
+    low: Number(candle.low.toPrecision(12)),
+    close: Number(candle.close.toPrecision(12)),
+    volume: Number(candle.volume.toPrecision(12)),
+  }));
 }
 
 export function getLatestTradeBlock(tokenId: string): number | null {
@@ -601,10 +670,12 @@ export function getToken(id: string): Token | null {
 }
 
 export function createToken(input: TokenInput): Token {
+  const ticker = input.ticker.trim().toUpperCase();
   const token: Token = {
     ...input,
-    id: input.id ?? `${input.ticker.toLowerCase()}-${Date.now()}`,
-    ticker: input.ticker.toUpperCase(),
+    id: input.id ?? `${ticker.toLowerCase()}-${Date.now()}`,
+    name: input.name.trim(),
+    ticker,
     createdAt: input.createdAt ?? new Date().toISOString(),
     marketType: input.marketType ?? "unlisted",
     pairAddress: input.pairAddress ?? null,

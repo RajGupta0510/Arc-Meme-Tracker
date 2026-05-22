@@ -285,9 +285,10 @@ export async function indexTokenSwapEvents(token: Token) {
 
   const latestBlock = await getLatestBlockNumber();
   const latestStoredBlock = getLatestTradeBlock(token.id);
+  const recentWindowStart = Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS);
   const fromBlock = latestStoredBlock === null
-    ? Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS)
-    : Math.max(0, latestStoredBlock - 5);
+    ? recentWindowStart
+    : Math.max(recentWindowStart, latestStoredBlock - 5);
   const toBlock = latestBlock;
 
   logger.info(
@@ -295,6 +296,7 @@ export async function indexTokenSwapEvents(token: Token) {
       tokenId: token.id,
       pairAddress: token.pairAddress,
       contractAddress: token.contractAddress,
+      latestStoredBlock,
       fromBlock,
       toBlock,
       swapTopic: SWAP_TOPIC,

@@ -5,6 +5,7 @@
  * ArcMeme.fun API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { TradeSide } from "./tradeSide";
 
 export interface Trade {
   id: string;
@@ -13,7 +14,7 @@ export interface Trade {
   txHash: string;
   logIndex: number;
   blockNumber: number;
-  side: "buy" | "sell";
+  side: TradeSide;
   tokenAmount: number;
   wusdcAmount: number;
   executionPrice: number;

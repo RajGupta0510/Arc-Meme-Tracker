@@ -22,4 +22,8 @@ export interface TokenInput {
   twitter?: string;
   telegram?: string;
   logoColor?: string;
+  logoImage?: string;
+  totalSupply?: number;
+  contractAddress?: string;
+  creatorAddress?: string;
 }

@@ -21,6 +21,7 @@ export type TokenMarketState = {
   reserves: NormalizedReserves | null;
   price: number | null;
   tokenBalance: string;
+  lpBalance: string;
   isLoading: boolean;
   error: string | null;
 };
@@ -46,6 +47,7 @@ export function useTokenMarket(token: Token | null | undefined, walletAddress?: 
     reserves: null,
     price: null,
     tokenBalance: "0.000",
+    lpBalance: "0.000",
     isLoading: false,
     error: null,
   }));
@@ -62,6 +64,7 @@ export function useTokenMarket(token: Token | null | undefined, walletAddress?: 
         reserves: null,
         price: null,
         tokenBalance: "0.000",
+        lpBalance: "0.000",
         isLoading: false,
         error: null,
       }));
@@ -80,11 +83,19 @@ export function useTokenMarket(token: Token | null | undefined, walletAddress?: 
       const reserves = normalizeReserves(rawReserves, token.contractAddress, amm.wusdcAddress);
       const price = calculatePoolPrice(reserves.baseReserve, reserves.quoteReserve, tokenDecimals, 18);
       let tokenBalance = "0.000";
+      let lpBalance = "0.000";
 
       if (walletAddress) {
-        const tokenContract = getErc20Contract(token.contractAddress, provider);
-        const balance = await tokenContract.balanceOf(walletAddress);
+        const [tokenContract, pairContract] = [
+          getErc20Contract(token.contractAddress, provider),
+          getErc20Contract(token.pairAddress, provider),
+        ];
+        const [balance, lpTokenBalance] = await Promise.all([
+          tokenContract.balanceOf(walletAddress),
+          pairContract.balanceOf(walletAddress),
+        ]);
         tokenBalance = formatBalance(formatUnits(balance, tokenDecimals));
+        lpBalance = formatBalance(formatUnits(lpTokenBalance, 18));
       }
 
       setState({
@@ -94,6 +105,7 @@ export function useTokenMarket(token: Token | null | undefined, walletAddress?: 
         reserves,
         price,
         tokenBalance,
+        lpBalance,
         isLoading: false,
         error: null,
       });

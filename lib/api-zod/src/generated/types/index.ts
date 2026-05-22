@@ -6,11 +6,18 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./candle";
 export * from "./chartPoint";
+export * from "./getTokenCandlesInterval";
+export * from "./getTokenCandlesParams";
 export * from "./healthStatus";
 export * from "./listTokensParams";
 export * from "./listTokensSort";
 export * from "./platformStats";
 export * from "./token";
 export * from "./tokenInput";
+export * from "./tokenMarketInput";
+export * from "./tokenMarketInputMarketType";
+export * from "./tokenMarketType";
 export * from "./trade";
+export * from "./tradeSide";

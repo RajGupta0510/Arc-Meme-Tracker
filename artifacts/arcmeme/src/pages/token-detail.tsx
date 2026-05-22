@@ -1,9 +1,9 @@
 import { useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useGetToken, useGetTokenChart, getGetTokenQueryKey, getGetTokenChartQueryKey, type Trade } from "@workspace/api-client-react";
+import { useGetToken, getGetTokenQueryKey, type Trade } from "@workspace/api-client-react";
 import { TokenLogo } from "@/components/token-card";
 import { formatCompactNumber, formatAddress, formatBalance } from "@/lib/utils";
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { MarketCandlestickChart, type MarketCandle } from "@/components/market-candlestick-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +11,13 @@ import { useState } from "react";
 import { useWallet } from "@/hooks/use-wallet";
 import { useTokenMarket } from "@/hooks/use-token-market";
 import { useTokenTrade } from "@/hooks/use-token-trade";
+import { useTokenLiquidity } from "@/hooks/use-token-liquidity";
 import { Loader2 } from "lucide-react";
 import { formatUnits, parseUnits } from "ethers";
 import { calculateAmountIn, calculateAmountOut } from "@/lib/arc-amm";
+
+const candleIntervals = ["1m", "5m", "15m", "1h", "4h"] as const;
+type CandleInterval = (typeof candleIntervals)[number];
 
 export function TokenDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,10 +26,6 @@ export function TokenDetailPage() {
 
   const { data: token, isLoading: tokenLoading, isError: tokenError, refetch: refetchToken } = useGetToken(id!, {
     query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
-  });
-
-  const { data: chartData } = useGetTokenChart(id!, {
-    query: { enabled: !!id, queryKey: getGetTokenChartQueryKey(id!) },
   });
 
   const tradesQueryKey = ["token-trades", id] as const;
@@ -58,12 +58,54 @@ export function TokenDetailPage() {
     refetchInterval: token?.marketType === "amm_pool" ? 15000 : false,
   });
 
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>("1m");
+  const candlesQueryKey = ["token-candles", id, candleInterval] as const;
+  const {
+    data: candles = [],
+    isLoading: candlesLoading,
+    isError: candlesError,
+  } = useQuery({
+    queryKey: candlesQueryKey,
+    enabled: !!id,
+    queryFn: async () => {
+      try {
+        const response = await fetch(`/api/tokens/${encodeURIComponent(id!)}/candles?interval=${candleInterval}`);
+        const indexingError = response.headers.get("x-arcmeme-indexing-error");
+        if (indexingError) {
+          console.warn("[candles] Backend indexing error", indexingError);
+        }
+        if (!response.ok) {
+          const body = await response.text();
+          console.error("[candles] Failed to load candles", response.status, body);
+          return [];
+        }
+
+        const data = await response.json();
+        if (!Array.isArray(data)) {
+          console.error("[candles] Unexpected candles payload", data);
+          return [];
+        }
+
+        return data as MarketCandle[];
+      } catch (error) {
+        console.error("[candles] Request failed", error);
+        return [];
+      }
+    },
+    refetchInterval: token?.marketType === "amm_pool" ? 15000 : false,
+  });
+
   const [tradeTab, setTradeTab] = useState<"buy" | "sell">("buy");
   const [tradeInputAmount, setTradeInputAmount] = useState("");
   const [tradeOutputAmount, setTradeOutputAmount] = useState("");
+  const [liquidityTab, setLiquidityTab] = useState<"add" | "withdraw">("add");
+  const [liquidityTokenAmount, setLiquidityTokenAmount] = useState("");
+  const [liquidityUsdcAmount, setLiquidityUsdcAmount] = useState("");
+  const [liquidityLpAmount, setLiquidityLpAmount] = useState("");
   const walletAddress = state.status === "connected" ? state.address : undefined;
   const market = useTokenMarket(token, walletAddress);
   const trade = useTokenTrade();
+  const liquidity = useTokenLiquidity();
 
   const usdcBalance =
     state.status === "connected" && state.isArcTestnet
@@ -110,6 +152,7 @@ export function TokenDetailPage() {
   const activeBalance = tradeTab === "buy" ? usdcBalance : market.tokenBalance;
   const numericActiveBalance =
     activeBalance !== null && Number.isFinite(Number(activeBalance)) ? Number(activeBalance) : null;
+  const numericLpBalance = Number.isFinite(Number(market.lpBalance)) ? Number(market.lpBalance) : 0;
   const poolTokenReserve = market.reserves
     ? formatBalance(formatUnits(market.reserves.baseReserve, market.tokenDecimals))
     : null;
@@ -123,6 +166,35 @@ export function TokenDetailPage() {
     market.reserves !== null &&
     Number(tradeInputAmount) > 0 &&
     !isTradingPending;
+  const isLiquidityPending =
+    liquidity.status.status === "detecting-pair" ||
+    liquidity.status.status === "wrapping-usdc" ||
+    liquidity.status.status === "approving" ||
+    liquidity.status.status === "adding" ||
+    liquidity.status.status === "withdrawing" ||
+    liquidity.status.status === "saving-market";
+  const canAddLiquidity =
+    state.status === "connected" &&
+    state.isArcTestnet &&
+    Boolean(token.contractAddress) &&
+    Number(liquidityTokenAmount) > 0 &&
+    Number(liquidityUsdcAmount) > 0 &&
+    !isLiquidityPending;
+  const canWithdrawLiquidity =
+    state.status === "connected" &&
+    state.isArcTestnet &&
+    market.isTradeable &&
+    Number(liquidityLpAmount) > 0 &&
+    Number(liquidityLpAmount) <= numericLpBalance &&
+    !isLiquidityPending;
+  const liquidityStepLabel =
+    liquidity.status.status === "detecting-pair" ? "Detecting pair..." :
+    liquidity.status.status === "wrapping-usdc" ? "Wrapping USDC..." :
+    liquidity.status.status === "approving" ? "Approving..." :
+    liquidity.status.status === "adding" ? "Adding liquidity..." :
+    liquidity.status.status === "withdrawing" ? "Withdrawing liquidity..." :
+    liquidity.status.status === "saving-market" ? "Saving market..." :
+    liquidityTab === "add" ? "Add Liquidity" : "Withdraw Liquidity";
 
   const formatSwapAmount = (value: bigint, decimals: number) => {
     const number = Number(formatUnits(value, decimals));
@@ -191,8 +263,45 @@ export function TokenDetailPage() {
     if (!txHash) return;
     setTradeInputAmount("");
     setTradeOutputAmount("");
-    await queryClient.invalidateQueries({ queryKey: tradesQueryKey });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: tradesQueryKey }),
+      queryClient.invalidateQueries({ queryKey: ["token-candles", id] }),
+    ]);
     await Promise.all([market.refresh(), refreshWallet()]);
+  };
+
+  const handleAddLiquidity = async () => {
+    const result = await liquidity.addLiquidity({
+      token,
+      tokenAmount: liquidityTokenAmount,
+      wusdcAmount: liquidityUsdcAmount,
+    });
+
+    if (!result) return;
+    setLiquidityTokenAmount("");
+    setLiquidityUsdcAmount("");
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: getGetTokenQueryKey(id!) }),
+      queryClient.invalidateQueries({ queryKey: ["token-candles", id] }),
+      queryClient.invalidateQueries({ queryKey: tradesQueryKey }),
+    ]);
+    await Promise.all([refetchToken(), market.refresh(), refreshWallet()]);
+  };
+
+  const handleWithdrawLiquidity = async () => {
+    const result = await liquidity.withdrawLiquidity({
+      token,
+      lpTokenAmount: liquidityLpAmount,
+    });
+
+    if (!result) return;
+    setLiquidityLpAmount("");
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["token-candles", id] }),
+      queryClient.invalidateQueries({ queryKey: tradesQueryKey }),
+      market.refresh(),
+      refreshWallet(),
+    ]);
   };
 
   return (
@@ -234,80 +343,36 @@ export function TokenDetailPage() {
         <Card className="bg-card/50 border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-border/50">
             <CardTitle className="text-sm font-medium uppercase tracking-wider">
-              Price Chart
+              Market Chart
             </CardTitle>
             <div className="flex gap-2">
-              {["1H", "4H", "1D"].map((tf) => (
-                <Button key={tf} variant="outline" size="sm" className="h-6 text-[10px]">
+              {candleIntervals.map((tf) => (
+                <Button
+                  key={tf}
+                  variant={candleInterval === tf ? "default" : "outline"}
+                  size="sm"
+                  className="h-6 text-[10px] uppercase"
+                  onClick={() => setCandleInterval(tf)}
+                >
                   {tf}
                 </Button>
               ))}
             </div>
           </CardHeader>
           <CardContent className="p-0 h-[400px]">
-            {chartData && chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorClose" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        stopColor={
-                          isPositive
-                            ? "hsl(var(--primary))"
-                            : "hsl(var(--destructive))"
-                        }
-                        stopOpacity={0.3}
-                      />
-                      <stop
-                        offset="95%"
-                        stopColor={
-                          isPositive
-                            ? "hsl(var(--primary))"
-                            : "hsl(var(--destructive))"
-                        }
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="timestamp"
-                    tickFormatter={(tick) =>
-                      new Date(tick).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    }
-                    hide
-                  />
-                  <YAxis domain={["auto", "auto"]} hide />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      borderColor: "hsl(var(--border))",
-                    }}
-                    itemStyle={{
-                      color: "hsl(var(--foreground))",
-                      fontFamily: "var(--font-mono)",
-                    }}
-                    labelFormatter={(label) => new Date(label).toLocaleString()}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="close"
-                    stroke={
-                      isPositive
-                        ? "hsl(var(--primary))"
-                        : "hsl(var(--destructive))"
-                    }
-                    fillOpacity={1}
-                    fill="url(#colorClose)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            {candlesLoading ? (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground font-mono text-sm">
+                Loading market candles...
+              </div>
+            ) : candlesError ? (
+              <div className="w-full h-full flex items-center justify-center text-destructive font-mono text-sm">
+                Could not load market candles.
+              </div>
+            ) : candles.length > 0 ? (
+              <MarketCandlestickChart candles={candles} />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted-foreground font-mono text-sm">
-                No chart data
+                No real swap candles yet.
               </div>
             )}
           </CardContent>
@@ -610,6 +675,162 @@ export function TokenDetailPage() {
                   </span>
                 ) : (
                   `${tradeTab === "buy" ? "Buy" : "Sell"} ${token.ticker}`
+                )}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Liquidity Manager */}
+        <Card className="border-border bg-card/80 backdrop-blur">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg uppercase tracking-tight">
+              Liquidity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex bg-secondary/50 p-1 rounded-md">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setLiquidityTab("add");
+                  liquidity.reset();
+                }}
+                className={`flex-1 h-8 text-xs font-bold transition-colors ${
+                  liquidityTab === "add"
+                    ? "bg-background shadow-sm text-primary"
+                    : "text-muted-foreground hover:text-primary"
+                }`}
+              >
+                Add
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setLiquidityTab("withdraw");
+                  liquidity.reset();
+                }}
+                className={`flex-1 h-8 text-xs font-bold transition-colors ${
+                  liquidityTab === "withdraw"
+                    ? "bg-background shadow-sm text-destructive"
+                    : "text-muted-foreground hover:text-destructive"
+                }`}
+              >
+                Withdraw
+              </Button>
+            </div>
+
+            {liquidityTab === "add" ? (
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1 flex justify-between text-xs font-mono">
+                    <span className="text-muted-foreground">{token.ticker}</span>
+                    <span className="text-muted-foreground">Balance: {market.tokenBalance}</span>
+                  </div>
+                  <Input
+                    type="number"
+                    placeholder="Token amount"
+                    value={liquidityTokenAmount}
+                    onChange={(event) => {
+                      setLiquidityTokenAmount(event.target.value);
+                      liquidity.reset();
+                    }}
+                    className="font-mono bg-background/50"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex justify-between text-xs font-mono">
+                    <span className="text-muted-foreground">WUSDC</span>
+                    <span className="text-muted-foreground">
+                      Wallet USDC: {usdcBalance ?? "0.000"}
+                    </span>
+                  </div>
+                  <Input
+                    type="number"
+                    placeholder="USDC amount"
+                    value={liquidityUsdcAmount}
+                    onChange={(event) => {
+                      setLiquidityUsdcAmount(event.target.value);
+                      liquidity.reset();
+                    }}
+                    className="font-mono bg-background/50"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-muted-foreground">LP Balance</span>
+                  <span className="text-foreground">{market.lpBalance}</span>
+                </div>
+                <Input
+                  type="number"
+                  placeholder="LP token amount"
+                  value={liquidityLpAmount}
+                  onChange={(event) => {
+                    setLiquidityLpAmount(event.target.value);
+                    liquidity.reset();
+                  }}
+                  className="font-mono bg-background/50"
+                />
+                <div className="flex gap-1">
+                  {[25, 50, 100].map((pct) => (
+                    <button
+                      key={pct}
+                      onClick={() => {
+                        setLiquidityLpAmount(formatBalance((numericLpBalance * pct) / 100));
+                        liquidity.reset();
+                      }}
+                      className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {liquidity.status.status === "error" && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
+                {liquidity.status.message}
+              </div>
+            )}
+            {liquidity.status.status === "success" && (
+              <a
+                href={`https://testnet.arcscan.app/tx/${liquidity.status.txHash}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-primary font-mono hover:underline"
+              >
+                Liquidity {liquidity.status.action === "add" ? "added" : "withdrawn"}. View transaction.
+              </a>
+            )}
+
+            {state.status !== "connected" ? (
+              <div className="text-center text-xs text-muted-foreground font-mono py-2 border border-border/50 rounded-md bg-secondary/20">
+                Connect wallet to manage liquidity
+              </div>
+            ) : !state.isArcTestnet ? (
+              <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
+                Switch to Arc Testnet to manage liquidity
+              </div>
+            ) : liquidityTab === "withdraw" && !market.isTradeable ? (
+              <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
+                Add liquidity first to create the pool
+              </div>
+            ) : (
+              <Button
+                className="w-full font-bold uppercase tracking-wider h-11 text-black"
+                disabled={liquidityTab === "add" ? !canAddLiquidity : !canWithdrawLiquidity}
+                onClick={liquidityTab === "add" ? handleAddLiquidity : handleWithdrawLiquidity}
+              >
+                {isLiquidityPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {liquidityStepLabel}
+                  </span>
+                ) : (
+                  liquidityStepLabel
                 )}
               </Button>
             )}

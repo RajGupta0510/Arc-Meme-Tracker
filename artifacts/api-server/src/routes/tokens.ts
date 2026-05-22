@@ -1,13 +1,14 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import {
   ListTokensQueryParams,
   LaunchTokenBody,
   GetTokenParams,
-  GetTokenChartParams,
 } from "@workspace/api-zod";
 import {
   createToken,
   getToken,
+  isCandleInterval,
+  listCandles,
   listTrades,
   listTokens,
   updateTokenMarket,
@@ -70,34 +71,6 @@ function getErrorPayload(err: unknown) {
         ? err.stack
         : undefined,
   };
-}
-
-function generateChartData(basePrice: number, points = 120) {
-  const now = Date.now();
-  const interval = 5 * 60 * 1000;
-  let price = basePrice * 0.5;
-  const data = [];
-
-  for (let i = points; i >= 0; i--) {
-    const change = (Math.random() - 0.47) * price * 0.06;
-    const open = price;
-    price = Math.max(price + change, basePrice * 0.01);
-    const high = Math.max(open, price) * (1 + Math.random() * 0.02);
-    const low = Math.min(open, price) * (1 - Math.random() * 0.02);
-    const close = price;
-    const volume = basePrice * 1000000 * (0.5 + Math.random() * 2);
-
-    data.push({
-      timestamp: now - i * interval,
-      open: parseFloat(open.toFixed(12)),
-      high: parseFloat(high.toFixed(12)),
-      low: parseFloat(low.toFixed(12)),
-      close: parseFloat(close.toFixed(12)),
-      volume: parseFloat(volume.toFixed(2)),
-    });
-  }
-
-  return data;
 }
 
 router.get("/tokens", async (req, res): Promise<void> => {
@@ -289,9 +262,64 @@ router.get("/tokens/:id/trades", async (req, res): Promise<void> => {
   }
 });
 
+async function indexTokenTradesIfTradeable(token: Token, res: Response) {
+  if (token.marketType !== "amm_pool" || !token.pairAddress || !token.contractAddress) return;
+
+  try {
+    const result = await indexTokenSwapEvents(token);
+    logger.info({ id: token.id, pairAddress: token.pairAddress, ...result }, "Indexed token swaps before market data response");
+  } catch (err) {
+    logger.error(
+      {
+        err,
+        id: token.id,
+        pairAddress: token.pairAddress,
+        contractAddress: token.contractAddress,
+      },
+      "Swap indexing failed before market data response",
+    );
+    res.setHeader("x-arcmeme-indexing-error", err instanceof Error ? err.message : "Unknown indexing error");
+  }
+}
+
+router.get("/tokens/:id/candles", async (req, res): Promise<void> => {
+  try {
+    const params = GetTokenParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const interval = isCandleInterval(req.query.interval) ? req.query.interval : "1m";
+    const token = getToken(params.data.id);
+    if (!token) {
+      res.status(404).json({ error: "Token not found" });
+      return;
+    }
+
+    await indexTokenTradesIfTradeable(token, res);
+    const candles = listCandles(token.id, interval);
+
+    logger.info(
+      {
+        id: token.id,
+        interval,
+        count: candles.length,
+        latest: candles.at(-1) ?? null,
+      },
+      "GET /api/tokens/:id/candles",
+    );
+
+    res.json(candles);
+  } catch (err) {
+    logger.error({ err, id: req.params.id, interval: req.query.interval }, "GET /api/tokens/:id/candles failed");
+    res.status(200).json([]);
+  }
+});
+
 router.get("/tokens/:id/chart", async (req, res): Promise<void> => {
   try {
-    const params = GetTokenChartParams.safeParse(req.params);
+    const params = GetTokenParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
@@ -303,8 +331,13 @@ router.get("/tokens/:id/chart", async (req, res): Promise<void> => {
       return;
     }
 
-    const chart = generateChartData(token.price);
-    res.json(chart);
+    await indexTokenTradesIfTradeable(token, res);
+    res.json(
+      listCandles(token.id, "5m").map(({ time, ...candle }) => ({
+        timestamp: time * 1000,
+        ...candle,
+      })),
+    );
   } catch (err) {
     logger.error({ err, id: req.params.id }, "GET /api/tokens/:id/chart failed");
     res.status(200).json([]);

@@ -67,6 +67,7 @@ export const DEFAULT_ARC_AMM = ARC_AMM_OPTIONS[0];
 export const ERC20_ABI = [
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)",
+  "function totalSupply() view returns (uint256)",
   "function balanceOf(address owner) view returns (uint256)",
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 value) returns (bool)",
@@ -99,6 +100,7 @@ export const UNISWAP_V2_PAIR_ABI = [
 export const UNISWAP_V2_ROUTER_ABI = [
   "function getAmountsOut(uint256 amountIn, address[] calldata path) view returns (uint256[] memory amounts)",
   "function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity)",
+  "function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB)",
   "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)",
   "function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)",
   "function swapExactETHForTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) payable returns (uint256[] memory amounts)",
@@ -404,6 +406,50 @@ export async function addTokenUsdcLiquidity(params: {
     amm.wusdcAddress,
     tokenAmount,
     wusdcAmount,
+    amountTokenMin,
+    amountWusdcMin,
+    signerAddress,
+    toDeadline(),
+  );
+  await tx.wait();
+  return tx.hash as string;
+}
+
+export async function removeTokenUsdcLiquidity(params: {
+  tokenAddress: string;
+  pairAddress: string;
+  lpTokenAmount: string;
+  slippageBps?: number;
+  amm?: ArcAmmConfig;
+  signer: Signer;
+}) {
+  const amm = params.amm ?? DEFAULT_ARC_AMM;
+  const signerAddress = await params.signer.getAddress();
+  const router = getRouterContract(amm, params.signer);
+  const lpToken = getErc20Contract(params.pairAddress, params.signer);
+  const liquidity = parseUnits(params.lpTokenAmount, 18);
+  const provider = params.signer.provider;
+  if (!provider) {
+    throw new Error("Wallet provider is required to read pool reserves.");
+  }
+  const reserves = normalizeReserves(
+    await readPairReserves(params.pairAddress, provider),
+    params.tokenAddress,
+    amm.wusdcAddress,
+  );
+  const totalSupply = BigInt(await lpToken.totalSupply());
+  const slippageBps = BigInt(params.slippageBps ?? 100);
+  const expectedTokenAmount = totalSupply > 0n ? (reserves.baseReserve * liquidity) / totalSupply : 0n;
+  const expectedWusdcAmount = totalSupply > 0n ? (reserves.quoteReserve * liquidity) / totalSupply : 0n;
+  const amountTokenMin = expectedTokenAmount - (expectedTokenAmount * slippageBps) / 10_000n;
+  const amountWusdcMin = expectedWusdcAmount - (expectedWusdcAmount * slippageBps) / 10_000n;
+
+  await approveIfNeeded(params.pairAddress, signerAddress, amm.routerAddress, liquidity, params.signer);
+
+  const tx = await router.removeLiquidity(
+    params.tokenAddress,
+    amm.wusdcAddress,
+    liquidity,
     amountTokenMin,
     amountWusdcMin,
     signerAddress,
