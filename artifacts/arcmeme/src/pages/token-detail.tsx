@@ -1,6 +1,6 @@
 import { useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useGetToken, getGetTokenQueryKey, type Trade } from "@workspace/api-client-react";
+import { useGetToken, getGetTokenQueryKey, useGetTokenTrades, getGetTokenTradesQueryKey, useGetTokenCandles, getGetTokenCandlesQueryKey, type Trade } from "@workspace/api-client-react";
 import { TokenLogo } from "@/components/token-card";
 import { formatCompactNumber, formatAddress, formatBalance } from "@/lib/utils";
 import { MarketCandlestickChart, type MarketCandle } from "@/components/market-candlestick-chart";
@@ -28,72 +28,30 @@ export function TokenDetailPage() {
     query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
   });
 
-  const tradesQueryKey = ["token-trades", id] as const;
-  const { data: trades = [], isLoading: tradesLoading, isError: tradesError } = useQuery({
-    queryKey: tradesQueryKey,
-    enabled: !!id,
-    queryFn: async () => {
-      try {
-        const response = await fetch(`/api/tokens/${encodeURIComponent(id!)}/trades`);
-        const indexingError = response.headers.get("x-arcmeme-indexing-error");
-        if (indexingError) {
-          console.warn("[trades] Backend indexing error", indexingError);
-        }
-        if (!response.ok) {
-          const body = await response.text();
-          console.error("[trades] Failed to load trades", response.status, body);
-          return [];
-        }
-        const data = await response.json();
-        if (!Array.isArray(data)) {
-          console.error("[trades] Unexpected trades payload", data);
-          return [];
-        }
-        return data as Trade[];
-      } catch (error) {
-        console.error("[trades] Request failed", error);
-        return [];
-      }
+  const { data: trades = [], isLoading: tradesLoading, isError: tradesError } = useGetTokenTrades(id!, {
+    query: {
+      queryKey: getGetTokenTradesQueryKey(id!),
+      enabled: !!id,
+      refetchInterval: token?.marketType === "amm_pool" ? 15000 : false,
     },
-    refetchInterval: token?.marketType === "amm_pool" ? 15000 : false,
   });
 
   const [candleInterval, setCandleInterval] = useState<CandleInterval>("1m");
-  const candlesQueryKey = ["token-candles", id, candleInterval] as const;
   const {
     data: candles = [],
     isLoading: candlesLoading,
     isError: candlesError,
-  } = useQuery({
-    queryKey: candlesQueryKey,
-    enabled: !!id,
-    queryFn: async () => {
-      try {
-        const response = await fetch(`/api/tokens/${encodeURIComponent(id!)}/candles?interval=${candleInterval}`);
-        const indexingError = response.headers.get("x-arcmeme-indexing-error");
-        if (indexingError) {
-          console.warn("[candles] Backend indexing error", indexingError);
-        }
-        if (!response.ok) {
-          const body = await response.text();
-          console.error("[candles] Failed to load candles", response.status, body);
-          return [];
-        }
-
-        const data = await response.json();
-        if (!Array.isArray(data)) {
-          console.error("[candles] Unexpected candles payload", data);
-          return [];
-        }
-
-        return data as MarketCandle[];
-      } catch (error) {
-        console.error("[candles] Request failed", error);
-        return [];
-      }
-    },
-    refetchInterval: token?.marketType === "amm_pool" ? 15000 : false,
-  });
+  } = useGetTokenCandles(
+    id!,
+    { interval: candleInterval },
+    {
+      query: {
+        queryKey: getGetTokenCandlesQueryKey(id!, { interval: candleInterval }),
+        enabled: !!id,
+        refetchInterval: token?.marketType === "amm_pool" ? 15000 : false,
+      },
+    }
+  );
 
   const [tradeTab, setTradeTab] = useState<"buy" | "sell">("buy");
   const [tradeInputAmount, setTradeInputAmount] = useState("");
@@ -237,6 +195,43 @@ export function TokenDetailPage() {
     }
   };
 
+  const quoteLiquidityAmount = (amount: string, inputType: "token" | "usdc") => {
+    if (!market.reserves || !amount || Number(amount) <= 0) return "";
+    try {
+      const baseReserve = market.reserves.baseReserve;
+      const quoteReserve = market.reserves.quoteReserve;
+      if (baseReserve === 0n || quoteReserve === 0n) return "";
+
+      if (inputType === "token") {
+        const tokenVal = parseUnits(amount, market.tokenDecimals);
+        const wusdcVal = (tokenVal * quoteReserve) / baseReserve;
+        const formatted = formatUnits(wusdcVal, 18);
+        let clean = formatted;
+        if (clean.includes(".")) {
+          clean = clean.replace(/0+$/, "");
+          if (clean.endsWith(".")) {
+            clean = clean.slice(0, -1);
+          }
+        }
+        return clean;
+      } else {
+        const wusdcVal = parseUnits(amount, 18);
+        const tokenVal = (wusdcVal * baseReserve) / quoteReserve;
+        const formatted = formatUnits(tokenVal, market.tokenDecimals);
+        let clean = formatted;
+        if (clean.includes(".")) {
+          clean = clean.replace(/0+$/, "");
+          if (clean.endsWith(".")) {
+            clean = clean.slice(0, -1);
+          }
+        }
+        return clean;
+      }
+    } catch {
+      return "";
+    }
+  };
+
   const handleInputAmountChange = (amount: string) => {
     setTradeInputAmount(amount);
     setTradeOutputAmount(quoteFromInput(amount));
@@ -264,8 +259,8 @@ export function TokenDetailPage() {
     setTradeInputAmount("");
     setTradeOutputAmount("");
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: tradesQueryKey }),
-      queryClient.invalidateQueries({ queryKey: ["token-candles", id] }),
+      queryClient.invalidateQueries({ queryKey: getGetTokenTradesQueryKey(id!) }),
+      queryClient.invalidateQueries({ queryKey: getGetTokenCandlesQueryKey(id!) }),
     ]);
     await Promise.all([market.refresh(), refreshWallet()]);
   };
@@ -282,8 +277,8 @@ export function TokenDetailPage() {
     setLiquidityUsdcAmount("");
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getGetTokenQueryKey(id!) }),
-      queryClient.invalidateQueries({ queryKey: ["token-candles", id] }),
-      queryClient.invalidateQueries({ queryKey: tradesQueryKey }),
+      queryClient.invalidateQueries({ queryKey: getGetTokenCandlesQueryKey(id!) }),
+      queryClient.invalidateQueries({ queryKey: getGetTokenTradesQueryKey(id!) }),
     ]);
     await Promise.all([refetchToken(), market.refresh(), refreshWallet()]);
   };
@@ -297,8 +292,8 @@ export function TokenDetailPage() {
     if (!result) return;
     setLiquidityLpAmount("");
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["token-candles", id] }),
-      queryClient.invalidateQueries({ queryKey: tradesQueryKey }),
+      queryClient.invalidateQueries({ queryKey: getGetTokenCandlesQueryKey(id!) }),
+      queryClient.invalidateQueries({ queryKey: getGetTokenTradesQueryKey(id!) }),
       market.refresh(),
       refreshWallet(),
     ]);
@@ -732,7 +727,11 @@ export function TokenDetailPage() {
                     placeholder="Token amount"
                     value={liquidityTokenAmount}
                     onChange={(event) => {
-                      setLiquidityTokenAmount(event.target.value);
+                      const val = event.target.value;
+                      setLiquidityTokenAmount(val);
+                      if (market.reserves && market.reserves.baseReserve > 0n && market.reserves.quoteReserve > 0n) {
+                        setLiquidityUsdcAmount(quoteLiquidityAmount(val, "token"));
+                      }
                       liquidity.reset();
                     }}
                     className="font-mono bg-background/50"
@@ -750,7 +749,11 @@ export function TokenDetailPage() {
                     placeholder="USDC amount"
                     value={liquidityUsdcAmount}
                     onChange={(event) => {
-                      setLiquidityUsdcAmount(event.target.value);
+                      const val = event.target.value;
+                      setLiquidityUsdcAmount(val);
+                      if (market.reserves && market.reserves.baseReserve > 0n && market.reserves.quoteReserve > 0n) {
+                        setLiquidityTokenAmount(quoteLiquidityAmount(val, "usdc"));
+                      }
                       liquidity.reset();
                     }}
                     className="font-mono bg-background/50"

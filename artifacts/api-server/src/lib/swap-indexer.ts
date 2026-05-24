@@ -251,15 +251,16 @@ async function fetchSwapLogs(pairAddress: string, fromBlock: number, toBlock: nu
 
 async function logRawPairLogs(pairAddress: string, fromBlock: number, toBlock: number) {
   try {
+    const probeFrom = Math.max(fromBlock, toBlock - 1000);
     const rawLogs = await rpc<RpcLog[]>("eth_getLogs", [{
       address: pairAddress,
-      fromBlock: toHexBlock(fromBlock),
+      fromBlock: toHexBlock(probeFrom),
       toBlock: toHexBlock(toBlock),
     }]);
     logger.warn(
       {
         pairAddress,
-        fromBlock,
+        fromBlock: probeFrom,
         toBlock,
         count: rawLogs.length,
         sample: rawLogs.slice(0, 10).map((log) => ({
@@ -274,7 +275,8 @@ async function logRawPairLogs(pairAddress: string, fromBlock: number, toBlock: n
       "No Swap logs found; raw pair log probe",
     );
   } catch (err) {
-    logger.error({ err, pairAddress, fromBlock, toBlock }, "Raw pair log probe failed");
+    const probeFrom = Math.max(fromBlock, toBlock - 1000);
+    logger.error({ err, pairAddress, fromBlock: probeFrom, toBlock }, "Raw pair log probe failed");
   }
 }
 
@@ -285,10 +287,13 @@ export async function indexTokenSwapEvents(token: Token) {
 
   const latestBlock = await getLatestBlockNumber();
   const latestStoredBlock = getLatestTradeBlock(token.id);
+  const maxLookback = Number(process.env.TRADE_INDEX_MAX_LOOKBACK ?? 100_000);
+  const lookbackStart = Math.max(0, latestBlock - maxLookback);
   const recentWindowStart = Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS);
+
   const fromBlock = latestStoredBlock === null
     ? recentWindowStart
-    : Math.max(recentWindowStart, latestStoredBlock - 5);
+    : Math.max(lookbackStart, latestStoredBlock - 5);
   const toBlock = latestBlock;
 
   logger.info(
