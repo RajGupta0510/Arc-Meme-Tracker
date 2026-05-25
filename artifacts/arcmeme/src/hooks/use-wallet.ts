@@ -41,7 +41,6 @@ function isOnArcTestnet(chainId: string) {
   return chainId.toLowerCase() === ARC_TESTNET.chainId.toLowerCase();
 }
 
-// Arc native USDC is exposed through the EVM native balance with 18 decimals.
 async function fetchUsdcBalance(address: string): Promise<string> {
   const eth = getEthereum();
   if (!eth) return "0.000";
@@ -55,7 +54,22 @@ async function fetchUsdcBalance(address: string): Promise<string> {
 }
 
 export function useWallet() {
-  const [state, setState] = useState<WalletState>({ status: "disconnected" });
+  const [state, setState] = useState<WalletState>(() => {
+    if (typeof window !== "undefined") {
+      const cached = window.localStorage.getItem("arcmeme.wallet_connected");
+      const address = window.localStorage.getItem("arcmeme.wallet_address");
+      if (cached === "true" && address) {
+        return {
+          status: "connected",
+          address,
+          chainId: "0x4cef52",
+          isArcTestnet: true,
+          usdcBalance: "—",
+        };
+      }
+    }
+    return { status: "disconnected" };
+  });
 
   const getShortAddress = (address: string) =>
     address.slice(0, 6) + "..." + address.slice(-4);
@@ -67,6 +81,10 @@ export function useWallet() {
       const accounts = (await eth.request({ method: "eth_accounts" })) as string[];
       if (!accounts || accounts.length === 0) {
         setState({ status: "disconnected" });
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("arcmeme.wallet_connected");
+          window.localStorage.removeItem("arcmeme.wallet_address");
+        }
         return;
       }
       const provider = new BrowserProvider(getEthereum()!);
@@ -82,8 +100,17 @@ export function useWallet() {
         isArcTestnet: onArc,
         usdcBalance,
       });
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("arcmeme.wallet_connected", "true");
+        window.localStorage.setItem("arcmeme.wallet_address", accounts[0]);
+      }
     } catch {
       setState({ status: "disconnected" });
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("arcmeme.wallet_connected");
+        window.localStorage.removeItem("arcmeme.wallet_address");
+      }
     }
   }, []);
 
@@ -110,6 +137,10 @@ export function useWallet() {
       const accs = accounts as string[];
       if (!accs || accs.length === 0) {
         setState({ status: "disconnected" });
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("arcmeme.wallet_connected");
+          window.localStorage.removeItem("arcmeme.wallet_address");
+        }
       } else {
         updateConnectedState();
       }
@@ -146,6 +177,10 @@ export function useWallet() {
       const code = (err as { code?: number }).code;
       if (code === 4001) {
         setState({ status: "disconnected" });
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("arcmeme.wallet_connected");
+          window.localStorage.removeItem("arcmeme.wallet_address");
+        }
       } else {
         setState({ status: "error", message: "Failed to connect wallet." });
       }
@@ -154,6 +189,10 @@ export function useWallet() {
 
   const disconnect = useCallback(() => {
     setState({ status: "disconnected" });
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("arcmeme.wallet_connected");
+      window.localStorage.removeItem("arcmeme.wallet_address");
+    }
   }, []);
 
   const switchToArcTestnet = useCallback(async () => {
@@ -184,4 +223,3 @@ export function useWallet() {
     isMetaMaskAvailable: getRawEthereum() !== null,
   };
 }
-

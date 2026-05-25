@@ -19,7 +19,7 @@ export const HealthCheckResponse = zod.object({
  * @summary List all tokens
  */
 export const ListTokensQueryParams = zod.object({
-  sort: zod.enum(["trending", "newest", "marketCap", "volume"]).optional(),
+  sort: zod.enum(["trending", "newest", "marketCap", "volume", "mostActive", "topGainers"]).optional(),
   limit: zod.coerce.number().optional(),
 });
 

@@ -23,7 +23,7 @@ import { useWallet } from "@/hooks/use-wallet";
 import { useDeployToken, ARC_EXPLORER } from "@/hooks/use-deploy-token";
 import { useCreateLiquidityPool } from "@/hooks/use-create-liquidity-pool";
 import { motion } from "framer-motion";
-import { Upload, X, ImageIcon, CheckCircle, Loader2, ExternalLink } from "lucide-react";
+import { Upload, X, ImageIcon, CheckCircle, Loader2, ExternalLink, Globe, Twitter, Send } from "lucide-react";
 
 const SUPPLY_PRESETS = [
   { label: "1M", value: 1_000_000 },
@@ -274,9 +274,9 @@ export function LaunchPage() {
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="text-6xl mb-6"
+          className="mb-6 flex justify-center"
         >
-          🚀
+          <CheckCircle className="h-16 w-16 text-primary" />
         </motion.div>
         <h1 className="text-4xl font-bold uppercase tracking-tight text-primary mb-2">It's Live.</h1>
         {deployedContractAddress ? (
@@ -592,7 +592,7 @@ export function LaunchPage() {
                   <FormItem>
                     <FormControl>
                       <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">🌐</span>
+                        <Globe className="absolute left-3 top-3 h-3.5 w-3.5 text-muted-foreground" />
                         <Input placeholder="https://yourtoken.fun" className="bg-card/50 font-mono text-sm pl-8" {...field} />
                       </div>
                     </FormControl>
@@ -607,7 +607,7 @@ export function LaunchPage() {
                   <FormItem>
                     <FormControl>
                       <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">𝕏</span>
+                        <Twitter className="absolute left-3 top-3 h-3.5 w-3.5 text-muted-foreground" />
                         <Input placeholder="Handle without @" className="bg-card/50 font-mono text-sm pl-8" {...field} />
                       </div>
                     </FormControl>
@@ -622,7 +622,7 @@ export function LaunchPage() {
                   <FormItem>
                     <FormControl>
                       <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">✈</span>
+                        <Send className="absolute left-3 top-3 h-3.5 w-3.5 text-muted-foreground" />
                         <Input placeholder="https://t.me/yourgroup" className="bg-card/50 font-mono text-sm pl-8" {...field} />
                       </div>
                     </FormControl>
@@ -719,7 +719,7 @@ export function LaunchPage() {
                   onClick={() => resetDeploy()}
                   className="text-xs font-mono text-primary underline underline-offset-2 hover:no-underline"
                 >
-                  ↩ Dismiss and try again
+                  Dismiss and try again
                 </button>
               </div>
             )}
@@ -750,7 +750,7 @@ export function LaunchPage() {
                   {deployStatus.status === "retrying" && `Retrying ${(deployStatus as { step: string }).step}...`}
                   {(deployStatus.status === "idle" || deployStatus.status === "success") && launchToken.isPending && "Saving..."}
                 </span>
-              ) : hasMetaMask && walletState.status === "connected" ? "🚀 Deploy ERC20 + Launch" : "💾 Save Token"}
+              ) : hasMetaMask && walletState.status === "connected" ? "Deploy ERC20 + Launch" : "Save Token"}
             </Button>
           </form>
         </Form>
@@ -819,13 +819,13 @@ export function LaunchPage() {
           {(watchAll.website || watchAll.twitter || watchAll.telegram) && (
             <div className="flex gap-2 flex-wrap border-t border-border/30 pt-4">
               {watchAll.website && (
-                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">🌐 Website</span>
+                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">Website</span>
               )}
               {watchAll.twitter && (
-                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">𝕏 @{watchAll.twitter}</span>
+                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">Twitter: @{watchAll.twitter}</span>
               )}
               {watchAll.telegram && (
-                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">✈ Telegram</span>
+                <span className="text-xs font-mono px-2 py-1 rounded bg-secondary text-muted-foreground">Telegram</span>
               )}
             </div>
           )}

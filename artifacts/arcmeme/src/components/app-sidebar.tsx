@@ -3,6 +3,7 @@ import { Activity, BarChart3, Bell, PlusCircle, Radar, Star, WalletCards } from 
 
 const navItems = [
   { href: "/", label: "Terminal", icon: BarChart3 },
+  { href: "/portfolio", label: "Portfolio", icon: WalletCards },
   { href: "/launch", label: "Launch", icon: PlusCircle },
 ];
 

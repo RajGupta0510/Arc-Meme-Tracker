@@ -1,18 +1,42 @@
 import { Link } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type React from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useWallet } from "@/hooks/use-wallet";
 import { ListTokensSort, getListTokensQueryKey, useListTokens } from "@workspace/api-client-react";
 import { formatCompactNumber } from "@/lib/utils";
-import { Activity, Bell, Menu, PlusCircle, Radar, Star } from "lucide-react";
+import { 
+  Activity, 
+  Bell, 
+  Menu, 
+  PlusCircle, 
+  Radar, 
+  Star,
+  Wallet,
+  LogOut,
+  PieChart,
+  Copy,
+  ExternalLink,
+  ChevronDown,
+  Check,
+  Loader2
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 type AlertRule = {
   id: string;
   tokenId: string;
   ticker: string;
-  metric: "price" | "marketCap";
+  metric: "price_above" | "price_below" | "volume_spike" | "liquidity_change" | "whale_swap";
   target: number;
 };
 
@@ -90,6 +114,7 @@ export function Navbar() {
 }
 
 function MarketUtilityDrawers() {
+  const { toast } = useToast();
   const { data: tokens = [] } = useListTokens(
     { sort: ListTokensSort.newest, limit: 100 },
     {
@@ -101,14 +126,69 @@ function MarketUtilityDrawers() {
   );
   const [watchlist, setWatchlist] = useState<string[]>(() => readJson("arcmeme.watchlist", []));
   const [alerts, setAlerts] = useState<AlertRule[]>(() => readJson("arcmeme.alerts", []));
+  const [notifiedAlerts, setNotifiedAlerts] = useState<string[]>(() => readJson("arcmeme.notifiedAlerts", []));
 
   const refreshLocalState = () => {
     setWatchlist(readJson("arcmeme.watchlist", []));
     setAlerts(readJson("arcmeme.alerts", []));
+    setNotifiedAlerts(readJson("arcmeme.notifiedAlerts", []));
   };
 
   const watchedTokens = tokens.filter((token) => watchlist.includes(token.id));
   const activity = tokens.slice(0, 12);
+
+  // Global Price & Vol Alert Checker
+  useEffect(() => {
+    if (tokens.length === 0 || alerts.length === 0) return;
+
+    const triggered = alerts.filter((alert) => {
+      const token = tokens.find((item) => item.id === alert.tokenId);
+      if (!token) return false;
+
+      if (alert.metric === "price_above") {
+        return token.price >= alert.target;
+      }
+      if (alert.metric === "price_below") {
+        return token.price <= alert.target;
+      }
+      if (alert.metric === "volume_spike") {
+        return token.volume24h >= alert.target;
+      }
+      if (alert.metric === "liquidity_change") {
+        return token.marketCap >= alert.target;
+      }
+      return false;
+    });
+
+    const fresh = triggered.filter((alert) => !notifiedAlerts.includes(alert.id));
+    if (fresh.length === 0) return;
+
+    fresh.forEach((alert) => {
+      let label = "";
+      if (alert.metric === "price_above") label = "Price rose above";
+      if (alert.metric === "price_below") label = "Price dropped below";
+      if (alert.metric === "volume_spike") label = "24h Volume exceeded";
+      if (alert.metric === "liquidity_change") label = "Liquidity exceeded";
+
+      toast({
+        title: `ALERT TRIGGERED: $${alert.ticker}`,
+        description: `${label} target of $${alert.target.toLocaleString()}`,
+        variant: "default",
+      });
+
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(`ArcMeme Alert: $${alert.ticker}`, {
+          body: `${label} target of $${alert.target.toLocaleString()}`,
+        });
+      }
+    });
+
+    setNotifiedAlerts((current) => {
+      const next = [...new Set([...current, ...fresh.map((alert) => alert.id)])];
+      window.localStorage.setItem("arcmeme.notifiedAlerts", JSON.stringify(next));
+      return next;
+    });
+  }, [tokens, alerts, notifiedAlerts, toast]);
 
   return (
     <div className="hidden sm:flex items-center gap-1">
@@ -118,7 +198,7 @@ function MarketUtilityDrawers() {
             <EmptyDrawerState text="Star tokens in the terminal to pin them here." />
           ) : watchedTokens.map((token) => (
             <Link key={token.id} href={`/token/${token.id}`} className="flex items-center justify-between rounded-md border border-border bg-background/40 p-3 transition-colors hover:border-primary/50">
-              <span className="font-bold">${token.ticker}</span>
+              <span className="font-bold" style={{ color: token.logoColor || "#22c55e" }}>${token.ticker}</span>
               <span className="font-mono text-xs text-primary">${token.price.toFixed(6)}</span>
             </Link>
           ))}
@@ -126,13 +206,18 @@ function MarketUtilityDrawers() {
       </UtilityDrawer>
 
       <UtilityDrawer icon={<Bell className="h-4 w-4" />} title="Alerts" onOpen={refreshLocalState}>
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-[380px] overflow-y-auto hide-scrollbar">
           {alerts.length === 0 ? (
-            <EmptyDrawerState text="Create price or market-cap alerts from the terminal toolbar." />
+            <EmptyDrawerState text="Create Price, Vol, or Liquidity alerts from the terminal toolbar." />
           ) : alerts.map((alert) => {
-            const token = tokens.find((item) => item.id === alert.tokenId);
-            const current = alert.metric === "price" ? token?.price : token?.marketCap;
-            const triggered = current !== undefined && current >= alert.target;
+            const triggered = notifiedAlerts.includes(alert.id);
+            let metricName = "";
+            if (alert.metric === "price_above") metricName = "Price Above";
+            if (alert.metric === "price_below") metricName = "Price Below";
+            if (alert.metric === "volume_spike") metricName = "Vol Spike";
+            if (alert.metric === "liquidity_change") metricName = "Liquidity";
+            if (alert.metric === "whale_swap") metricName = "Whale Swap";
+
             return (
               <button
                 key={alert.id}
@@ -144,10 +229,15 @@ function MarketUtilityDrawers() {
                 className="w-full rounded-md border border-border bg-background/40 p-3 text-left transition-colors hover:border-destructive/50"
               >
                 <div className="flex justify-between font-mono text-xs">
-                  <span>${alert.ticker} {alert.metric}</span>
-                  <span className={triggered ? "text-primary" : "text-muted-foreground"}>{alert.metric === "price" ? "$" : "$"}{alert.target.toFixed(alert.metric === "price" ? 6 : 0)}</span>
+                  <span>${alert.ticker} ({metricName})</span>
+                  <span className={triggered ? "text-primary" : "text-muted-foreground"}>
+                    ${alert.target.toLocaleString()}
+                  </span>
                 </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">Click to remove</div>
+                <div className="mt-1.5 flex justify-between items-center text-[10px] font-mono text-muted-foreground">
+                  <span>{triggered ? "Triggered" : "Active"}</span>
+                  <span className="text-[9px] hover:text-destructive">Click to remove</span>
+                </div>
               </button>
             );
           })}
@@ -161,7 +251,7 @@ function MarketUtilityDrawers() {
           ) : activity.map((token) => (
             <Link key={token.id} href={`/token/${token.id}`} className="block rounded-md border border-border bg-background/40 p-3 transition-colors hover:border-primary/50">
               <div className="flex items-center justify-between">
-                <span className="font-bold">${token.ticker}</span>
+                <span className="font-bold" style={{ color: token.logoColor || "#22c55e" }}>${token.ticker}</span>
                 <span className={`font-mono text-[10px] uppercase ${token.marketType === "amm_pool" ? "text-primary" : "text-yellow-400"}`}>
                   {token.marketType === "amm_pool" ? "Pool live" : "Needs pool"}
                 </span>
@@ -216,86 +306,169 @@ type WalletButtonProps = {
   isConnected: boolean;
   isConnecting: boolean;
   hasError: boolean;
-  onConnect: () => void;
+  onConnect: () => Promise<void>;
   onDisconnect: () => void;
-  onSwitchNetwork: () => void;
-  getShortAddress: (a: string) => string;
+  onSwitchNetwork: () => Promise<void>;
+  getShortAddress: (address: string) => string;
 };
+
+function getAddressGradient(address: string) {
+  if (!address) return "linear-gradient(135deg, #22c55e 0%, #15803d 100%)";
+  const clean = address.replace("0x", "");
+  const h1 = parseInt(clean.slice(0, 4), 16) % 360;
+  const h2 = parseInt(clean.slice(4, 8), 16) % 360;
+  return `linear-gradient(135deg, hsl(${h1}, 85%, 60%) 0%, hsl(${h2}, 85%, 45%) 100%)`;
+}
 
 function WalletButton({
   state,
   isConnected,
   isConnecting,
+  hasError,
   onConnect,
   onDisconnect,
   onSwitchNetwork,
   getShortAddress,
 }: WalletButtonProps) {
-  const [showMenu, setShowMenu] = useState(false);
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (state.status === "connected") {
+      navigator.clipboard.writeText(state.address);
+      setCopied(true);
+      toast({
+        title: "Address Copied",
+        description: "Wallet address copied to clipboard.",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   if (isConnecting) {
     return (
-      <Button disabled className="font-mono text-xs font-bold uppercase tracking-wider opacity-70" data-testid="button-wallet-connecting">
-        <span className="animate-pulse">Connecting...</span>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled
+        className="font-mono text-xs border-primary/30 bg-primary/5 text-primary gap-2 h-9 px-4 rounded-lg animate-pulse"
+      >
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Connecting...
       </Button>
     );
   }
 
   if (isConnected && state.status === "connected") {
-    const { address, isArcTestnet } = state;
-    return (
-      <div className="relative">
-        <Button
-          variant="outline"
-          onClick={() => setShowMenu((v) => !v)}
-          className={`font-mono text-xs gap-2 ${!isArcTestnet ? "border-yellow-500/50 text-yellow-400" : "border-primary/50 text-primary"}`}
-          data-testid="button-wallet-connected"
-        >
-          <span
-            className={`w-2 h-2 rounded-full ${isArcTestnet ? "bg-primary" : "bg-yellow-400"}`}
-          />
-          {getShortAddress(address)}
-        </Button>
+    const isWrongNetwork = !state.isArcTestnet;
+    const gradient = getAddressGradient(state.address);
 
-        {showMenu && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-            <div className="absolute right-0 top-full mt-2 z-20 bg-card border border-border rounded-lg shadow-xl p-2 min-w-[200px] flex flex-col gap-1">
-              <div className="px-3 py-2 text-[10px] uppercase text-muted-foreground tracking-widest border-b border-border mb-1">
-                {isArcTestnet ? "Arc Network Testnet" : "Wrong Network"}
-              </div>
-              <div className="px-3 py-1.5 font-mono text-xs text-foreground break-all" data-testid="text-full-address">
-                {address}
-              </div>
-              {!isArcTestnet && (
-                <button
-                  onClick={() => { onSwitchNetwork(); setShowMenu(false); }}
-                  className="text-left px-3 py-1.5 text-xs text-yellow-400 hover:bg-yellow-500/10 rounded-md transition-colors"
-                  data-testid="button-switch-network"
-                >
-                  Switch to Arc Testnet
-                </button>
-              )}
-              <button
-                onClick={() => { onDisconnect(); setShowMenu(false); }}
-                className="text-left px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                data-testid="button-disconnect"
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/80 bg-black/40 backdrop-blur-md hover:border-primary/50 transition-all font-mono text-xs text-foreground outline-none group"
+            data-testid="button-connected-wallet"
+          >
+            {/* Status dot */}
+            <div className={`h-2 w-2 rounded-full ${isWrongNetwork ? "bg-yellow-500 animate-pulse" : "bg-primary shadow-[0_0_8px_hsl(var(--primary))]"}`} />
+            
+            {/* Balance */}
+            <span className="text-muted-foreground hidden md:inline border-r border-border/60 pr-2 mr-0.5 font-bold">
+              {state.usdcBalance} USDC
+            </span>
+
+            {/* Truncated Address */}
+            <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
+              {getShortAddress(state.address)}
+            </span>
+
+            {/* Personalized Gradient Avatar */}
+            <div
+              className="h-5 w-5 rounded-full border border-border/60 shrink-0"
+              style={{ background: gradient }}
+            />
+            
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-64 border-border bg-card/95 backdrop-blur-xl p-2" align="end">
+          <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+            Active Session
+          </DropdownMenuLabel>
+          
+          <div className="px-2 py-2 flex flex-col gap-1 bg-background/50 border border-border/50 rounded-md mb-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[11px] text-muted-foreground">Address</span>
+              <button 
+                onClick={handleCopy}
+                className="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded"
+                title="Copy Address"
               >
-                Disconnect
+                {copied ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
               </button>
             </div>
-          </>
-        )}
-      </div>
+            <span className="font-mono text-xs text-foreground select-all break-all leading-tight">
+              {state.address}
+            </span>
+            
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
+              <span className="font-mono text-[11px] text-muted-foreground">USDC Balance</span>
+              <span className="font-mono text-xs font-bold text-primary">{state.usdcBalance} USDC</span>
+            </div>
+          </div>
+
+          <DropdownMenuItem asChild>
+            <Link href="/portfolio" className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all">
+              <PieChart className="h-3.5 w-3.5" />
+              <span>Wallet Portfolio</span>
+            </Link>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem asChild>
+            <a 
+              href={`https://testnet.arcscan.app/address/${state.address}`} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span>View Explorer</span>
+            </a>
+          </DropdownMenuItem>
+
+          {isWrongNetwork && (
+            <DropdownMenuItem 
+              onClick={onSwitchNetwork}
+              className="flex items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded transition-all mt-1"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              <span>Switch to Arc Testnet</span>
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator className="bg-border/60 my-1.5" />
+
+          <DropdownMenuItem 
+            onClick={onDisconnect}
+            className="flex items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 text-destructive hover:bg-destructive/10 rounded transition-all"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span>Disconnect Session</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
+  // Disconnected state
   return (
     <Button
       onClick={onConnect}
-      className="font-mono text-xs font-bold uppercase tracking-wider"
+      className="font-mono text-xs uppercase text-black font-bold tracking-wider hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all h-9 rounded-lg"
       data-testid="button-connect-wallet"
     >
+      <Wallet className="h-3.5 w-3.5 mr-1.5" />
       Connect Wallet
     </Button>
   );

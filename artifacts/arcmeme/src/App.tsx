@@ -8,6 +8,7 @@ import { Navbar } from "@/components/navbar";
 import { HomePage } from "@/pages/home";
 import { TokenDetailPage } from "@/pages/token-detail";
 import { LaunchPage } from "@/pages/launch";
+import { PortfolioPage } from "@/pages/portfolio";
 import { useEffect } from "react";
 
 const queryClient = new QueryClient();
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/" component={HomePage} />
       <Route path="/token/:id" component={TokenDetailPage} />
       <Route path="/launch" component={LaunchPage} />
+      <Route path="/portfolio" component={PortfolioPage} />
       <Route component={NotFound} />
     </Switch>
   );

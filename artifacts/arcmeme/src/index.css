@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -110,9 +110,9 @@
   --chart-4: 286 78% 68%;
   --chart-5: 0 84% 60%;
 
-  --app-font-sans: 'Sora', sans-serif;
+  --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: 'Space Mono', monospace;
+  --app-font-mono: 'JetBrains Mono', monospace;
   --radius: 0.5rem;
   
   --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0.5);
@@ -241,5 +241,22 @@
   @keyframes ticker {
     from { transform: translateX(0); }
     to { transform: translateX(-50%); }
+  }
+
+  .neon-glow-primary {
+    box-shadow: 0 0 16px hsl(var(--primary) / 0.16);
+  }
+
+  .neon-glow-destructive {
+    box-shadow: 0 0 16px hsl(var(--destructive) / 0.16);
+  }
+
+  .terminal-pulse {
+    animation: terminal-blink 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes terminal-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
   }
 }

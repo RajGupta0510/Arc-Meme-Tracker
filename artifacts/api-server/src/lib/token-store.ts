@@ -563,21 +563,130 @@ function seedInitialTokens() {
 
 seedInitialTokens();
 
+type TradeStats = {
+  tokenId: string;
+  txs1h: number;
+  vol1h: number;
+  buys1h: number;
+  sells1h: number;
+};
+
+const cachedRankings: Record<string, { timestamp: number; data: Token[] }> = {};
+
+function getRecentTradeStats(hours = 24): Record<string, TradeStats> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  try {
+    const rows = db.prepare(`
+      SELECT
+        tokenId,
+        COUNT(*) as txs1h,
+        SUM(wusdcAmount) as vol1h,
+        SUM(CASE WHEN side = 'buy' THEN 1 ELSE 0 END) as buys1h,
+        SUM(CASE WHEN side = 'sell' THEN 1 ELSE 0 END) as sells1h
+      FROM trades
+      WHERE timestamp >= ?
+      GROUP BY tokenId
+    `).all(cutoff) as Record<string, unknown>[];
+
+    const stats: Record<string, TradeStats> = {};
+    for (const row of rows) {
+      const tId = String(row.tokenId);
+      stats[tId] = {
+        tokenId: tId,
+        txs1h: Number(row.txs1h),
+        vol1h: Number(row.vol1h || 0),
+        buys1h: Number(row.buys1h),
+        sells1h: Number(row.sells1h),
+      };
+    }
+    return stats;
+  } catch (err) {
+    return {};
+  }
+}
+
 export function listTokens(sort = "trending", limit = 50): Token[] {
-  const orderBy =
-    sort === "newest"
-      ? "datetime(createdAt) DESC"
-      : sort === "marketCap"
-        ? "marketCap DESC"
-        : sort === "volume"
-          ? "volume24h DESC"
-          : "change24h DESC";
+  const now = Date.now();
+  const cacheKey = `${sort}_${limit}`;
+  if (cachedRankings[cacheKey] && now - cachedRankings[cacheKey].timestamp < 5000) {
+    return cachedRankings[cacheKey].data;
+  }
 
   const rows = db
-    .prepare(`SELECT ${tokenColumns} FROM tokens WHERE ${launchedTokenWhere} ORDER BY ${orderBy} LIMIT ?`)
-    .all(limit) as Record<string, unknown>[];
+    .prepare(`SELECT ${tokenColumns} FROM tokens WHERE ${launchedTokenWhere}`)
+    .all() as Record<string, unknown>[];
+  const allTokens = rows.map(rowToToken);
 
-  return rows.map(rowToToken);
+  let sorted: Token[] = [];
+
+  if (sort === "newest") {
+    sorted = allTokens.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  } else if (sort === "marketCap") {
+    sorted = allTokens.sort((a, b) => b.marketCap - a.marketCap);
+  } else if (sort === "volume") {
+    sorted = allTokens.sort((a, b) => b.volume24h - a.volume24h);
+  } else if (sort === "topGainers") {
+    sorted = allTokens.sort((a, b) => b.change24h - a.change24h);
+  } else if (sort === "mostActive") {
+    const recentStats = getRecentTradeStats(24);
+    sorted = allTokens.sort((a, b) => {
+      const aRecent = recentStats[a.id]?.txs1h ?? 0;
+      const bRecent = recentStats[b.id]?.txs1h ?? 0;
+      const aScore = aRecent * 10 + a.txCount;
+      const bScore = bRecent * 10 + b.txCount;
+      return bScore - aScore;
+    });
+  } else {
+    const recentStats = getRecentTradeStats(6);
+    sorted = allTokens.sort((a, b) => {
+      const aStats = recentStats[a.id];
+      const bStats = recentStats[b.id];
+
+      const calculateScore = (token: Token, stats?: TradeStats) => {
+        let score = 0;
+        score += Math.log1p(token.volume24h) * 15;
+
+        if (stats && stats.vol1h > 0) {
+          score += Math.log1p(stats.vol1h) * 30;
+        }
+
+        if (token.change24h > 0) {
+          score += Math.min(token.change24h, 100) * 2;
+        } else if (token.change24h < 0) {
+          score += Math.max(token.change24h, -50) * 0.5;
+        }
+
+        score += Math.log1p(token.txCount) * 5;
+        if (stats && stats.txs1h > 0) {
+          score += stats.txs1h * 10;
+          const ratio = stats.buys1h / (stats.sells1h + 1);
+          score += Math.min(ratio, 10) * 25;
+        }
+
+        score += Math.log1p(token.holders) * 8;
+        return score;
+      };
+
+      const aScore = calculateScore(a, aStats);
+      const bScore = calculateScore(b, bStats);
+      return bScore - aScore;
+    });
+  }
+
+  const result = sorted.slice(0, limit);
+  cachedRankings[cacheKey] = { timestamp: now, data: result };
+  return result;
+}
+
+export function getTokenByContract(contractAddress: string): Token | null {
+  try {
+    const row = db
+      .prepare(`SELECT ${tokenColumns} FROM tokens WHERE LOWER(contractAddress) = LOWER(?)`)
+      .get(contractAddress) as Record<string, unknown> | undefined;
+    return row ? rowToToken(row) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function getTokens(): Token[] {

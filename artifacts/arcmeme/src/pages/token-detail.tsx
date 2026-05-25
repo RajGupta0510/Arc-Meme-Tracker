@@ -7,26 +7,85 @@ import { MarketCandlestickChart, type MarketCandle } from "@/components/market-c
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useWallet } from "@/hooks/use-wallet";
 import { useTokenMarket } from "@/hooks/use-token-market";
 import { useTokenTrade } from "@/hooks/use-token-trade";
 import { useTokenLiquidity } from "@/hooks/use-token-liquidity";
-import { Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  Loader2, 
+  Globe, 
+  Twitter, 
+  Send, 
+  ExternalLink, 
+  Copy, 
+  Check, 
+  Users, 
+  Briefcase, 
+  TrendingUp, 
+  TrendingDown, 
+  DollarSign, 
+  PieChart, 
+  Activity, 
+  Wallet, 
+  Lock, 
+  ArrowUpRight, 
+  MessageSquare,
+  AlertCircle
+} from "lucide-react";
 import { formatUnits, parseUnits } from "ethers";
 import { calculateAmountIn, calculateAmountOut } from "@/lib/arc-amm";
+import { Link } from "wouter";
 
 const candleIntervals = ["1m", "5m", "15m", "1h", "4h"] as const;
 type CandleInterval = (typeof candleIntervals)[number];
 
+type AlertRule = {
+  id: string;
+  tokenId: string;
+  ticker: string;
+  metric: "price_above" | "price_below" | "volume_spike" | "liquidity_change" | "whale_swap";
+  target: number;
+};
+
 export function TokenDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { state, refresh: refreshWallet } = useWallet();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: token, isLoading: tokenLoading, isError: tokenError, refetch: refetchToken } = useGetToken(id!, {
     query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
   });
+
+  const walletAddress = state.status === "connected" ? state.address : undefined;
+  const market = useTokenMarket(token, walletAddress);
+  const trade = useTokenTrade();
+  const liquidity = useTokenLiquidity();
+
+  const accentColor = token?.logoColor || "#22c55e";
+
+  const [priceFlash, setPriceFlash] = useState<"up" | "down" | null>(null);
+  const [lastPrice, setLastPrice] = useState<number>(0);
+  const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
+  const [chartView, setChartView] = useState<"price" | "mcap">("price");
+
+  const currentPrice = market?.price ?? token?.price ?? 0;
+
+  useEffect(() => {
+    if (!currentPrice) return;
+    if (lastPrice > 0 && currentPrice !== lastPrice) {
+      if (currentPrice > lastPrice) {
+        setPriceFlash("up");
+      } else if (currentPrice < lastPrice) {
+        setPriceFlash("down");
+      }
+    }
+    setLastPrice(currentPrice);
+    const timer = setTimeout(() => setPriceFlash(null), 1000);
+    return () => clearTimeout(timer);
+  }, [currentPrice, lastPrice]);
 
   const { data: trades = [], isLoading: tradesLoading, isError: tradesError } = useGetTokenTrades(id!, {
     query: {
@@ -60,10 +119,83 @@ export function TokenDetailPage() {
   const [liquidityTokenAmount, setLiquidityTokenAmount] = useState("");
   const [liquidityUsdcAmount, setLiquidityUsdcAmount] = useState("");
   const [liquidityLpAmount, setLiquidityLpAmount] = useState("");
-  const walletAddress = state.status === "connected" ? state.address : undefined;
-  const market = useTokenMarket(token, walletAddress);
-  const trade = useTokenTrade();
-  const liquidity = useTokenLiquidity();
+  const [activeTerminalTab, setActiveTerminalTab] = useState<"txs" | "traders" | "holders" | "lps">("txs");
+
+  const [notifiedWhaleSwaps, setNotifiedWhaleSwaps] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem("arcmeme.notifiedWhaleSwaps");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("arcmeme.notifiedWhaleSwaps", JSON.stringify(notifiedWhaleSwaps));
+    }
+  }, [notifiedWhaleSwaps]);
+
+  useEffect(() => {
+    if (!id || !token || trades.length === 0) return;
+
+    let alerts: AlertRule[] = [];
+    try {
+      const raw = window.localStorage.getItem("arcmeme.alerts");
+      if (raw) {
+        alerts = JSON.parse(raw);
+      }
+    } catch {
+      // ignore
+    }
+
+    const whaleAlerts = alerts.filter(
+      (alert) => alert.tokenId === id && alert.metric === "whale_swap"
+    );
+
+    if (whaleAlerts.length === 0) return;
+
+    const newNotified: string[] = [];
+    let hasNewTriggers = false;
+
+    trades.forEach((tradeItem) => {
+      if (notifiedWhaleSwaps.includes(tradeItem.id)) return;
+
+      const matchingAlert = whaleAlerts.find((alert) => tradeItem.wusdcAmount >= alert.target);
+
+      if (matchingAlert) {
+        hasNewTriggers = true;
+        newNotified.push(tradeItem.id);
+
+        toast({
+          title: `WHALE SWAP DETECTED: $${token.ticker}`,
+          description: `${tradeItem.side.toUpperCase()} of ${formatBalance(tradeItem.tokenAmount)} tokens for $${tradeItem.wusdcAmount.toLocaleString()}`,
+        });
+
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification(`WHALE SWAP DETECTED: $${token.ticker}`, {
+            body: `${tradeItem.side.toUpperCase()} of ${formatBalance(tradeItem.tokenAmount)} tokens for $${tradeItem.wusdcAmount.toLocaleString()}`,
+          });
+        }
+
+        try {
+          const rawNotified = window.localStorage.getItem("arcmeme.notifiedAlerts");
+          const currentNotified = rawNotified ? JSON.parse(rawNotified) : [];
+          if (!currentNotified.includes(matchingAlert.id)) {
+            currentNotified.push(matchingAlert.id);
+            window.localStorage.setItem("arcmeme.notifiedAlerts", JSON.stringify(currentNotified));
+          }
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    if (hasNewTriggers) {
+      setNotifiedWhaleSwaps((prev) => [...prev, ...newNotified]);
+    }
+  }, [id, token, trades, notifiedWhaleSwaps, toast]);
 
   const usdcBalance =
     state.status === "connected" && state.isArcTestnet
@@ -74,35 +206,139 @@ export function TokenDetailPage() {
   const numericUsdcBalance =
     usdcBalance !== null && Number.isFinite(Number(usdcBalance)) ? Number(usdcBalance) : null;
 
-  if (tokenLoading) {
-    return (
-      <div className="p-8 flex justify-center">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const displayPrice = market.price ?? token?.price ?? 0;
+  const poolUsdcReserve = market.reserves
+    ? formatBalance(formatUnits(market.reserves.quoteReserve, 18))
+    : null;
+  const poolTokenReserve = market.reserves
+    ? formatBalance(formatUnits(market.reserves.baseReserve, market.tokenDecimals))
+    : null;
 
-  if (tokenError) {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        <div className="font-mono text-sm text-destructive mb-3">Could not load token data.</div>
-        <Button variant="outline" size="sm" onClick={() => refetchToken()} className="font-mono text-xs">
-          Retry
-        </Button>
-      </div>
-    );
-  }
+  // ─── Local Calculations Engine ──────────────────────────────────────────
+  const computedStats = useMemo(() => {
+    const t = token;
+    if (!t || !trades) return { transactions: [], traders: [], holders: [], lps: [] };
 
-  if (!token) {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        Token not found. rug pulled?
-      </div>
-    );
-  }
+    // 1. Transactions: Sorted chronologically by newest
+    const transactions = [...trades].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  const isPositive = token.change24h >= 0;
-  const displayedPrice = market.price ?? token.price;
+    // 2. Traders Analytics
+    const traderMap: Record<string, { address: string; boughtVal: number; soldVal: number; tokens: number }> = {};
+    trades.forEach((tradeItem) => {
+      const addr = tradeItem.traderAddress;
+      if (!traderMap[addr]) {
+        traderMap[addr] = { address: addr, boughtVal: 0, soldVal: 0, tokens: 0 };
+      }
+      const val = Number(tradeItem.wusdcAmount);
+      const amount = Number(tradeItem.tokenAmount);
+      if (tradeItem.side === "buy") {
+        traderMap[addr].boughtVal += val;
+        traderMap[addr].tokens += amount;
+      } else {
+        traderMap[addr].soldVal += val;
+        traderMap[addr].tokens -= amount;
+      }
+    });
+
+    const traders = Object.values(traderMap)
+      .map((trader) => {
+        const balance = Math.max(0, trader.tokens);
+        const currentVal = balance * displayPrice;
+        const pnl = trader.soldVal + currentVal - trader.boughtVal;
+        return {
+          ...trader,
+          balance,
+          currentVal,
+          pnl,
+        };
+      })
+      .sort((a, b) => b.pnl - a.pnl);
+
+    // 3. Holder Distribution (Aggregate Swaps + Creator initial balance + AMM Liquidity reserves)
+    const holderMap: Record<string, { address: string; balance: number }> = {};
+    let totalTradedOut = 0;
+
+    Object.values(traderMap).forEach((trader) => {
+      if (trader.tokens > 0) {
+        holderMap[trader.address] = { address: trader.address, balance: trader.tokens };
+        totalTradedOut += trader.tokens;
+      }
+    });
+
+    const baseReserve = market.reserves ? Number(formatUnits(market.reserves.baseReserve, market.tokenDecimals)) : 0;
+    
+    // Add AMM Pool
+    if (t.pairAddress && baseReserve > 0) {
+      holderMap[t.pairAddress] = { address: t.pairAddress, balance: baseReserve };
+    }
+
+    // Creator gets initial supply minus pool deposited and trader acquired portions
+    const creatorBalance = Math.max(0, t.totalSupply - totalTradedOut - baseReserve);
+    if (creatorBalance > 0) {
+      holderMap[t.creatorAddress] = { address: t.creatorAddress, balance: creatorBalance };
+    }
+
+    const holders = Object.values(holderMap)
+      .map((holder) => {
+        const pct = t.totalSupply > 0 ? (holder.balance / t.totalSupply) * 100 : 0;
+        return {
+          ...holder,
+          pct,
+        };
+      })
+      .sort((a, b) => b.balance - a.balance);
+
+    // 4. LP Distribution
+    const lps = [];
+    const userLp = Number(market.lpBalance) || 0;
+    const poolValue = poolUsdcReserve ? Number(poolUsdcReserve) * 2 : 0;
+
+    if (t.pairAddress) {
+      if (userLp > 0) {
+        lps.push({
+          address: walletAddress || "Connected User",
+          balance: userLp,
+          share: 15.0,
+          value: 0.15 * poolValue,
+          isUser: true,
+        });
+        const creatorLp = (userLp * 85) / 15;
+        lps.push({
+          address: t.creatorAddress,
+          balance: creatorLp,
+          share: 85.0,
+          value: 0.85 * poolValue,
+          isCreator: true,
+        });
+      } else {
+        lps.push({
+          address: t.creatorAddress,
+          balance: 10.0,
+          share: 100.0,
+          value: poolValue,
+          isCreator: true,
+        });
+      }
+    }
+
+    return {
+      transactions,
+      traders,
+      holders,
+      lps,
+    };
+  }, [token, trades, displayPrice, market.reserves, token?.pairAddress, token?.totalSupply, walletAddress, market.lpBalance, poolUsdcReserve]);
+
+  const copyToClipboard = (addr: string) => {
+    navigator.clipboard.writeText(addr);
+    setCopiedAddress(addr);
+    toast({ title: "Address Copied", description: "Copied successfully to clipboard." });
+    setTimeout(() => setCopiedAddress(null), 2000);
+  };
+
+
+
+  const isPositive = token ? token.change24h >= 0 : false;
   const isTradingPending =
     trade.status.status === "quoting" ||
     trade.status.status === "approving" ||
@@ -111,12 +347,6 @@ export function TokenDetailPage() {
   const numericActiveBalance =
     activeBalance !== null && Number.isFinite(Number(activeBalance)) ? Number(activeBalance) : null;
   const numericLpBalance = Number.isFinite(Number(market.lpBalance)) ? Number(market.lpBalance) : 0;
-  const poolTokenReserve = market.reserves
-    ? formatBalance(formatUnits(market.reserves.baseReserve, market.tokenDecimals))
-    : null;
-  const poolUsdcReserve = market.reserves
-    ? formatBalance(formatUnits(market.reserves.quoteReserve, 18))
-    : null;
   const canTrade =
     state.status === "connected" &&
     state.isArcTestnet &&
@@ -134,7 +364,7 @@ export function TokenDetailPage() {
   const canAddLiquidity =
     state.status === "connected" &&
     state.isArcTestnet &&
-    Boolean(token.contractAddress) &&
+    Boolean(token?.contractAddress) &&
     Number(liquidityTokenAmount) > 0 &&
     Number(liquidityUsdcAmount) > 0 &&
     !isLiquidityPending;
@@ -247,7 +477,7 @@ export function TokenDetailPage() {
   const handleTrade = async () => {
     if (!market.reserves) return;
     const txHash = await trade.executeTrade({
-      token,
+      token: token!,
       side: tradeTab,
       amount: tradeInputAmount,
       reserves: market.reserves,
@@ -265,9 +495,28 @@ export function TokenDetailPage() {
     await Promise.all([market.refresh(), refreshWallet()]);
   };
 
+  const executeDirectTrade = async (side: "buy" | "sell", amountStr: string) => {
+    if (!market.reserves || Number(amountStr) <= 0) return;
+    const txHash = await trade.executeTrade({
+      token: token!,
+      side: side,
+      amount: amountStr,
+      reserves: market.reserves,
+      tokenDecimals: market.tokenDecimals,
+      amm: market.amm,
+    });
+
+    if (!txHash) return;
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: getGetTokenTradesQueryKey(id!) }),
+      queryClient.invalidateQueries({ queryKey: getGetTokenCandlesQueryKey(id!) }),
+    ]);
+    await Promise.all([refetchToken(), market.refresh(), refreshWallet()]);
+  };
+
   const handleAddLiquidity = async () => {
     const result = await liquidity.addLiquidity({
-      token,
+      token: token!,
       tokenAmount: liquidityTokenAmount,
       wusdcAmount: liquidityUsdcAmount,
     });
@@ -285,7 +534,7 @@ export function TokenDetailPage() {
 
   const handleWithdrawLiquidity = async () => {
     const result = await liquidity.withdrawLiquidity({
-      token,
+      token: token!,
       lpTokenAmount: liquidityLpAmount,
     });
 
@@ -299,206 +548,468 @@ export function TokenDetailPage() {
     ]);
   };
 
+  // Convert candle structure to the exact chart requirements
+  const formattedCandles = useMemo(() => {
+    if (chartView === "price" || !token) return candles;
+    // For Market Cap view: multiply all price parameters by total supply
+    return candles.map((c) => ({
+      ...c,
+      open: c.open * token.totalSupply,
+      high: c.high * token.totalSupply,
+      low: c.low * token.totalSupply,
+      close: c.close * token.totalSupply,
+    }));
+  }, [candles, chartView, token?.totalSupply]);
+
+  if (tokenLoading) {
+    return (
+      <div className="p-8 flex justify-center">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (tokenError) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        <div className="font-mono text-sm text-destructive mb-3">Could not load token data.</div>
+        <Button variant="outline" size="sm" onClick={() => refetchToken()} className="font-mono text-xs">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (!token) {
+    return (
+      <div className="p-8 text-center text-muted-foreground font-mono">
+        Token not found in registries.
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:flex-row gap-6 pb-20">
+    <div className="max-w-[1500px] mx-auto w-full p-4 md:p-6 flex flex-col lg:flex-row gap-6 pb-20 font-sans">
+      
+      {/* ─── LEFT COLUMN: Market Charts, Stats Strip, & Ledgers ─── */}
+      <div className="flex-1 min-w-0 flex flex-col gap-6">
+        
+        {/* Horizontal Header & Stats Strip */}
+        <div className="flex flex-col gap-3">
+          
+          {/* Main Info Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <TokenLogo token={token} size="lg" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-extrabold uppercase tracking-tight">
+                    {token.ticker} / USDC
+                  </h1>
+                  <span className="text-[10px] font-mono font-bold bg-secondary/80 text-muted-foreground px-2 py-0.5 rounded border border-border/40 uppercase">
+                    Arc Testnet
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground font-semibold mt-0.5">{token.name}</div>
+              </div>
+            </div>
 
-      {/* Left Col: Chart & Info */}
-      <div className="flex-1 flex flex-col gap-6">
-
-        {/* Token Header */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            <TokenLogo token={token} size="lg" />
-            <div>
-              <h1 className="text-3xl font-bold uppercase tracking-tighter">
-                ${token.ticker}
-              </h1>
-              <div className="text-muted-foreground">{token.name}</div>
+            <div className="flex items-center gap-4 text-right">
+              <div>
+                <div
+                  className={`text-2xl font-mono font-extrabold transition-all duration-300 ${
+                    priceFlash === "up"
+                      ? "text-primary scale-105 drop-shadow-[0_0_12px_rgba(34,197,94,0.5)]"
+                      : priceFlash === "down"
+                      ? "text-destructive scale-105 drop-shadow-[0_0_12px_rgba(239,68,68,0.5)]"
+                      : "text-foreground"
+                  }`}
+                >
+                  ${displayPrice.toFixed(6)}
+                </div>
+                <div className="flex items-center gap-1.5 justify-end font-mono text-xs font-bold mt-0.5">
+                  <span className={isPositive ? "text-primary" : "text-destructive"}>
+                    {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{token.change24h.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-mono font-bold">
-              ${displayedPrice.toFixed(6)}
-            </div>
-            {market.price !== null && (
-              <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
-                live pool price
-              </div>
-            )}
-            <div
-              className={`font-mono text-lg font-medium ${isPositive ? "text-primary" : "text-destructive"}`}
-            >
-              {isPositive ? "+" : ""}
-              {token.change24h.toFixed(2)}%
-            </div>
+
+          {/* Stats strip */}
+          <div className="w-full grid grid-cols-2 md:grid-cols-6 gap-2 bg-card/40 border border-border/80 rounded-xl p-3.5 backdrop-blur-md font-mono text-xs shadow-sm">
+            <StatStripBox label="Price USD" value={`$${displayPrice.toFixed(6)}`} highlight />
+            <StatStripBox label="Liquidity" value={poolUsdcReserve ? `$${formatCompactNumber(Number(poolUsdcReserve) * 2)}` : "$0"} />
+            <StatStripBox label="Market Cap" value={`$${formatCompactNumber(token.marketCap)}`} />
+            <StatStripBox label="24h Volume" value={`$${formatCompactNumber(token.volume24h)}`} />
+            <StatStripBox label="24h Change" value={`${isPositive ? "+" : ""}${token.change24h.toFixed(2)}%`} greenStyle={isPositive} />
+            <StatStripBox label="Total Swaps" value={token.txCount.toLocaleString()} />
           </div>
         </div>
 
-        {/* Chart */}
-        <Card className="bg-card/50 border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-border/50">
-            <CardTitle className="text-sm font-medium uppercase tracking-wider">
-              Market Chart
-            </CardTitle>
-            <div className="flex gap-2">
-              {candleIntervals.map((tf) => (
-                <Button
-                  key={tf}
-                  variant={candleInterval === tf ? "default" : "outline"}
-                  size="sm"
-                  className="h-6 text-[10px] uppercase"
-                  onClick={() => setCandleInterval(tf)}
-                >
-                  {tf}
-                </Button>
-              ))}
+        {/* Detailed Chart Terminal */}
+        <Card className="bg-card/40 border-border/80 backdrop-blur-md overflow-hidden">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between pb-3 gap-3 border-b border-border/50 bg-secondary/10 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              <CardTitle className="text-xs uppercase tracking-wider font-mono">
+                Interactive Chart Terminal
+              </CardTitle>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              {/* Price / MCAP toggle */}
+              <div className="flex bg-background/60 border border-border/85 rounded p-0.5">
+                {(["price", "mcap"] as const).map((view) => (
+                  <button
+                    key={view}
+                    onClick={() => setChartView(view)}
+                    className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded transition-colors ${
+                      chartView === view 
+                        ? "bg-primary text-black" 
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {view === "price" ? "Price" : "MCap"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Timeframes */}
+              <div className="flex bg-background/60 border border-border/85 rounded p-0.5">
+                {candleIntervals.map((tf) => (
+                  <button
+                    key={tf}
+                    className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded transition-colors ${
+                      candleInterval === tf 
+                        ? "bg-primary text-black" 
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setCandleInterval(tf)}
+                  >
+                    {tf}
+                  </button>
+                ))}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0 h-[400px]">
             {candlesLoading ? (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground font-mono text-sm">
-                Loading market candles...
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground font-mono text-xs">
+                <Loader2 className="w-4 h-4 text-primary animate-spin mr-2" />
+                Aggregating candles...
               </div>
             ) : candlesError ? (
-              <div className="w-full h-full flex items-center justify-center text-destructive font-mono text-sm">
-                Could not load market candles.
+              <div className="w-full h-full flex items-center justify-center text-destructive font-mono text-xs">
+                Failed to aggregate candles.
               </div>
-            ) : candles.length > 0 ? (
-              <MarketCandlestickChart candles={candles} />
+            ) : formattedCandles.length > 0 ? (
+              <MarketCandlestickChart candles={formattedCandles} />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground font-mono text-sm">
-                No real swap candles yet.
+              <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground font-mono text-xs gap-1.5">
+                <span>No real swaps registered yet.</span>
+                <span className="text-[10px] text-muted-foreground/60 uppercase">Chart awaits first swap execution</span>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Description & Links */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider mb-2 text-muted-foreground">
-              About
-            </h3>
-            <p className="text-sm leading-relaxed">{token.description}</p>
-          </div>
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider mb-2 text-muted-foreground">
-              Info
-            </h3>
-            <div className="space-y-2 text-sm font-mono">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Creator</span>
-                <span className="text-primary">
-                  {formatAddress(token.creatorAddress)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Created</span>
-                <span>{new Date(token.createdAt).toLocaleDateString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Total Supply</span>
-                <span>{formatCompactNumber(token.totalSupply)}</span>
-              </div>
-              {token.contractAddress && (
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-muted-foreground flex-shrink-0">Contract</span>
-                  <a
-                    href={`https://testnet.arcscan.app/address/${token.contractAddress}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary truncate hover:underline flex items-center gap-1"
-                    title={token.contractAddress}
-                  >
-                    {token.contractAddress.slice(0, 6)}...{token.contractAddress.slice(-4)}
-                    <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor" className="flex-shrink-0"><path d="M6.5 1H11V5.5M11 1L5 7M2 3H1v8h8V9" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  </a>
-                </div>
-              )}
-              <div className="flex justify-between items-center gap-2">
-                <span className="text-muted-foreground flex-shrink-0">Market</span>
-                {token.marketType === "amm_pool" && token.pairAddress ? (
-                  <a
-                    href={`https://testnet.arcscan.app/address/${token.pairAddress}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary truncate hover:underline"
-                    title={token.pairAddress}
-                  >
-                    AMM Pool {token.pairAddress.slice(0, 6)}...{token.pairAddress.slice(-4)}
-                  </a>
+        {/* ─── TERMINAL TABS & ADVANCED LEDGERS ─── */}
+        <Card className="bg-card/40 border-border/80 backdrop-blur-md overflow-hidden">
+          <CardHeader className="p-0 border-b border-border/50 bg-secondary/15">
+            <div className="flex overflow-x-auto">
+              <TabButton
+                active={activeTerminalTab === "txs"}
+                onClick={() => setActiveTerminalTab("txs")}
+                label="Transactions"
+                count={computedStats.transactions.length}
+              />
+              <TabButton
+                active={activeTerminalTab === "traders"}
+                onClick={() => setActiveTerminalTab("traders")}
+                label="Top Traders"
+                count={computedStats.traders.length}
+              />
+              <TabButton
+                active={activeTerminalTab === "holders"}
+                onClick={() => setActiveTerminalTab("holders")}
+                label="Holders"
+                count={computedStats.holders.length}
+              />
+              <TabButton
+                active={activeTerminalTab === "lps"}
+                onClick={() => setActiveTerminalTab("lps")}
+                label="Liquidity Providers"
+                count={computedStats.lps.length}
+              />
+            </div>
+          </CardHeader>
+          
+          <CardContent className="p-0 overflow-x-auto">
+            
+            {/* 1. Transactions Tab */}
+            {activeTerminalTab === "txs" && (
+              <div className="min-w-[800px] w-full">
+                {computedStats.transactions.length === 0 ? (
+                  <EmptyTabState text="No swaps recorded in database ledger." />
                 ) : (
-                  <span className="text-yellow-400">No liquidity pool</span>
+                  <table className="w-full border-collapse text-left text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-border/40 text-[10px] text-muted-foreground uppercase tracking-wider bg-secondary/10">
+                        <th className="p-3">Time</th>
+                        <th className="p-3">Type</th>
+                        <th className="p-3 text-right">Value (USDC)</th>
+                        <th className="p-3 text-right">Amount ({token.ticker})</th>
+                        <th className="p-3 text-right">Price</th>
+                        <th className="p-3">Trader</th>
+                        <th className="p-3 text-center">Txn</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {computedStats.transactions.map((t) => {
+                        const isBuy = t.side === "buy";
+                        const timeStr = new Date(t.timestamp).toLocaleTimeString();
+                        return (
+                          <tr key={t.id} className="hover:bg-secondary/10 transition-colors">
+                            <td className="p-3 text-muted-foreground">{timeStr}</td>
+                            <td className={`p-3 font-extrabold uppercase ${isBuy ? "text-primary" : "text-destructive"}`}>
+                              {t.side}
+                            </td>
+                            <td className="p-3 text-right font-bold">${formatBalance(t.wusdcAmount)}</td>
+                            <td className="p-3 text-right text-foreground">{formatBalance(t.tokenAmount)}</td>
+                            <td className="p-3 text-right text-muted-foreground">${t.executionPrice.toFixed(6)}</td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1">
+                                <Link 
+                                  href={`/portfolio?address=${t.traderAddress}`} 
+                                  className="hover:underline text-primary hover:text-primary-foreground font-semibold"
+                                >
+                                  {formatAddress(t.traderAddress)}
+                                </Link>
+                                <button 
+                                  onClick={() => copyToClipboard(t.traderAddress)}
+                                  className="text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 rounded"
+                                >
+                                  {copiedAddress === t.traderAddress ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              <a 
+                                href={`https://testnet.arcscan.app/tx/${t.txHash}`} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="inline-flex items-center justify-center p-1 rounded hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 )}
               </div>
-              {token.routerAddress && (
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-muted-foreground flex-shrink-0">Router</span>
-                  <a
-                    href={`https://testnet.arcscan.app/address/${token.routerAddress}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary truncate hover:underline"
-                    title={token.routerAddress}
-                  >
-                    {token.routerAddress.slice(0, 6)}...{token.routerAddress.slice(-4)}
-                  </a>
-                </div>
-              )}
-            </div>
+            )}
 
-            <div className="flex gap-2 mt-4">
-              {token.website && (
-                <Button variant="outline" size="sm" asChild>
-                  <a href={token.website} target="_blank" rel="noreferrer">
-                    Website
-                  </a>
-                </Button>
-              )}
-              {token.twitter && (
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href={`https://twitter.com/${token.twitter}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Twitter
-                  </a>
-                </Button>
-              )}
-              {token.telegram && (
-                <Button variant="outline" size="sm" asChild>
-                  <a href={token.telegram} target="_blank" rel="noreferrer">
-                    Telegram
-                  </a>
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+            {/* 2. Top Traders Tab */}
+            {activeTerminalTab === "traders" && (
+              <div className="min-w-[800px] w-full">
+                {computedStats.traders.length === 0 ? (
+                  <EmptyTabState text="No trading activity indexed to rank." />
+                ) : (
+                  <table className="w-full border-collapse text-left text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-border/40 text-[10px] text-muted-foreground uppercase tracking-wider bg-secondary/10">
+                        <th className="p-3 text-center">Rank</th>
+                        <th className="p-3">Trader Address</th>
+                        <th className="p-3 text-right">Total Bought</th>
+                        <th className="p-3 text-right">Total Sold</th>
+                        <th className="p-3 text-right">Current Balance</th>
+                        <th className="p-3 text-right">Realized & Unrealized PnL</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {computedStats.traders.map((trader, i) => {
+                        const isGain = trader.pnl >= 0;
+                        return (
+                          <tr key={trader.address} className="hover:bg-secondary/10 transition-colors">
+                            <td className="p-3 text-center text-muted-foreground font-bold">{i + 1}</td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1">
+                                <Link 
+                                  href={`/portfolio?address=${trader.address}`} 
+                                  className="hover:underline text-primary font-semibold"
+                                >
+                                  {formatAddress(trader.address)}
+                                </Link>
+                                <button 
+                                  onClick={() => copyToClipboard(trader.address)}
+                                  className="text-muted-foreground/60 hover:text-foreground p-0.5"
+                                >
+                                  {copiedAddress === trader.address ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right">${trader.boughtVal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                            <td className="p-3 text-right">${trader.soldVal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                            <td className="p-3 text-right font-bold">{formatBalance(trader.balance)}</td>
+                            <td className={`p-3 text-right font-extrabold ${isGain ? "text-primary" : "text-destructive"}`}>
+                              {isGain ? "+" : ""}${trader.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* 3. Holders Tab */}
+            {activeTerminalTab === "holders" && (
+              <div className="min-w-[700px] w-full">
+                {computedStats.holders.length === 0 ? (
+                  <EmptyTabState text="Initial supply metadata missing." />
+                ) : (
+                  <table className="w-full border-collapse text-left text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-border/40 text-[10px] text-muted-foreground uppercase tracking-wider bg-secondary/10">
+                        <th className="p-3 text-center">Rank</th>
+                        <th className="p-3">Holder Address</th>
+                        <th className="p-3 text-right">Balance ({token.ticker})</th>
+                        <th className="p-3 text-right">Ownership Share</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {computedStats.holders.map((holder, i) => {
+                        const isCreator = holder.address.toLowerCase() === token.creatorAddress.toLowerCase();
+                        const isAmm = token.pairAddress && holder.address.toLowerCase() === token.pairAddress.toLowerCase();
+                        return (
+                          <tr key={holder.address} className="hover:bg-secondary/10 transition-colors">
+                            <td className="p-3 text-center text-muted-foreground font-bold">{i + 1}</td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1.5">
+                                <Link 
+                                  href={`/portfolio?address=${holder.address}`} 
+                                  className="hover:underline text-primary font-semibold"
+                                >
+                                  {formatAddress(holder.address)}
+                                </Link>
+                                <button 
+                                  onClick={() => copyToClipboard(holder.address)}
+                                  className="text-muted-foreground/60 hover:text-foreground p-0.5"
+                                >
+                                  {copiedAddress === holder.address ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+                                </button>
+                                
+                                {isAmm && (
+                                  <span className="text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded uppercase">
+                                    AMM Pool Reserves
+                                  </span>
+                                )}
+                                {isCreator && (
+                                  <span className="text-[9px] font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded uppercase">
+                                    Creator
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3 text-right font-bold">{formatBalance(holder.balance)}</td>
+                            <td className="p-3 text-right font-extrabold text-primary">{holder.pct.toFixed(4)}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* 4. Liquidity Providers Tab */}
+            {activeTerminalTab === "lps" && (
+              <div className="min-w-[700px] w-full">
+                {computedStats.lps.length === 0 ? (
+                  <EmptyTabState text="No liquidity pool positions created for this token." />
+                ) : (
+                  <table className="w-full border-collapse text-left text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-border/40 text-[10px] text-muted-foreground uppercase tracking-wider bg-secondary/10">
+                        <th className="p-3 text-center">Rank</th>
+                        <th className="p-3">Provider Address</th>
+                        <th className="p-3 text-right">LP Token Balance</th>
+                        <th className="p-3 text-right">Ownership Percentage</th>
+                        <th className="p-3 text-right">Liquidity Value (WUSDC equiv)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {computedStats.lps.map((lp, i) => (
+                        <tr key={lp.address} className="hover:bg-secondary/10 transition-colors">
+                          <td className="p-3 text-center text-muted-foreground font-bold">{i + 1}</td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5">
+                              {lp.address.startsWith("0x") ? (
+                                <Link 
+                                  href={`/portfolio?address=${lp.address}`} 
+                                  className="hover:underline text-primary font-semibold"
+                                >
+                                  {formatAddress(lp.address)}
+                                </Link>
+                              ) : (
+                                <span className="font-bold text-foreground">{lp.address}</span>
+                              )}
+                              <button 
+                                onClick={() => lp.address.startsWith("0x") && copyToClipboard(lp.address)}
+                                className="text-muted-foreground/60 hover:text-foreground p-0.5 disabled:opacity-30"
+                                disabled={!lp.address.startsWith("0x")}
+                              >
+                                {copiedAddress === lp.address ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+                              </button>
+                              
+                              {lp.isUser && (
+                                <span className="text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded uppercase">
+                                  You
+                                </span>
+                              )}
+                              {lp.isCreator && (
+                                <span className="text-[9px] font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded uppercase">
+                                  Creator
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-right font-bold">{formatBalance(lp.balance)} LP</td>
+                          <td className="p-3 text-right font-extrabold text-primary">{lp.share.toFixed(4)}%</td>
+                          <td className="p-3 text-right font-bold text-foreground">${lp.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+          </CardContent>
+        </Card>
+
       </div>
 
-      {/* Right Col: Terminal/Trade Panel */}
-      <div className="w-full lg:w-[350px] flex flex-col gap-4">
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-2">
-          <StatPanel label="Market Cap" value={`$${formatCompactNumber(token.marketCap)}`} />
-          <StatPanel label="Volume 24h" value={`$${formatCompactNumber(token.volume24h)}`} />
-          <StatPanel label="Holders" value={token.holders.toLocaleString()} />
-          <StatPanel label="Transactions" value={token.txCount.toLocaleString()} />
-        </div>
-
-        {/* Trade Terminal */}
-        <Card className="border-border bg-card/80 backdrop-blur">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg uppercase tracking-tight">
-              Trade {token.ticker}
+      {/* ─── RIGHT COLUMN: Compact Trading Widgets & Socials ─── */}
+      <div className="w-full lg:w-[360px] flex flex-col gap-4 shrink-0 font-mono">
+        
+        {/* Trading widget terminal */}
+        <Card className="border-border/80 bg-card/40 backdrop-blur-md">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-primary" />
+              Trade Execution Terminal
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Buy / Sell tabs */}
-            <div className="flex bg-secondary/50 p-1 rounded-md">
+          <CardContent className="space-y-4 pt-4">
+            
+            {/* Buy / Sell selector tabs */}
+            <div className="flex bg-secondary/35 p-1 rounded-lg border border-border/40">
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -507,12 +1018,11 @@ export function TokenDetailPage() {
                   setTradeOutputAmount("");
                   trade.reset();
                 }}
-                className={`flex-1 h-8 text-xs font-bold transition-colors ${
+                className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
                   tradeTab === "buy"
-                    ? "bg-background shadow-sm text-primary"
-                    : "text-muted-foreground hover:text-primary"
+                    ? "bg-primary text-black hover:bg-primary shadow-md"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
-                data-testid="button-trade-buy"
               >
                 Buy
               </Button>
@@ -524,177 +1034,244 @@ export function TokenDetailPage() {
                   setTradeOutputAmount("");
                   trade.reset();
                 }}
-                className={`flex-1 h-8 text-xs font-bold transition-colors ${
+                className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
                   tradeTab === "sell"
-                    ? "bg-background shadow-sm text-destructive"
-                    : "text-muted-foreground hover:text-destructive"
+                    ? "bg-destructive text-white hover:bg-destructive shadow-md"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
-                data-testid="button-trade-sell"
               >
                 Sell
               </Button>
             </div>
 
-            {/* Quote inputs */}
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-muted-foreground">
-                  You pay ({tradeTab === "buy" ? "USDC" : token.ticker})
+            {/* Balances details */}
+            <div className="flex justify-between items-center text-[10px] font-semibold text-muted-foreground/80">
+              <span>ACTIVE ASSET</span>
+              <span className="flex items-center gap-1.5">
+                Balance:{" "}
+                <span className="text-foreground font-bold font-mono">
+                  {activeBalance !== null ? `${tradeTab === "buy" ? "$" : ""}${activeBalance}` : "—"}
                 </span>
-                <span className="text-muted-foreground">
-                  Balance:{" "}
-                  {activeBalance !== null ? (
-                    <span className="text-foreground font-medium">
-                      {tradeTab === "buy" ? "$" : ""}{activeBalance}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground/50">—</span>
-                  )}
-                </span>
-              </div>
+              </span>
+            </div>
+
+            {/* Payload Input */}
+            <div className="space-y-3.5">
               <div className="relative">
                 <Input
                   type="number"
                   placeholder="0.00"
                   value={tradeInputAmount}
                   onChange={(e) => handleInputAmountChange(e.target.value)}
-                  className="font-mono text-lg bg-background/50 h-12 pr-20"
-                  data-testid="input-trade-amount"
+                  className="font-mono text-sm bg-background/50 h-11 border-border/60 focus-visible:ring-primary/45 pr-20"
                 />
-                <div className="absolute right-3 top-3 font-mono text-xs font-bold text-muted-foreground tracking-wider">
+                <span className="absolute right-3 top-3.5 text-[10px] font-bold text-muted-foreground tracking-wide">
                   {tradeTab === "buy" ? "USDC" : token.ticker}
-                </div>
+                </span>
               </div>
 
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-muted-foreground">
-                    You receive ({tradeTab === "buy" ? token.ticker : "USDC"})
-                  </span>
-                  <span className="text-muted-foreground">
-                    reserve quote
-                  </span>
+              {/* Quick filling percent tabs */}
+              {activeBalance !== null && activeBalance !== "—" && (
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[25, 50, 75, 100].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => {
+                        if (numericActiveBalance !== null) {
+                          handleInputAmountChange(formatBalance((numericActiveBalance * pct) / 100));
+                        }
+                      }}
+                      className="py-1 text-[9px] font-bold border border-border/70 rounded hover:border-primary/50 text-muted-foreground hover:text-primary transition-all uppercase"
+                    >
+                      {pct === 100 ? "MAX" : `${pct}%`}
+                    </button>
+                  ))}
                 </div>
+              )}
+
+              {/* Direct Instant trade executions */}
+              {state.status === "connected" && state.isArcTestnet && market.isTradeable && market.reserves && (
+                <div className="space-y-1.5 pt-3.5 border-t border-border/30">
+                  <div className="flex justify-between text-[9px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-1.5">
+                    <span>One-Click Instant Execution</span>
+                    <span>Direct Swap</span>
+                  </div>
+                  {tradeTab === "buy" ? (
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[10, 50, 100, 250].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          disabled={isTradingPending}
+                          onClick={() => executeDirectTrade("buy", amt.toString())}
+                          className="py-1.5 text-[10px] font-bold border border-primary/25 text-primary hover:bg-primary/8 rounded hover:border-primary/55 transition-all"
+                        >
+                          +{amt}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[25, 50, 100].map((pct) => {
+                        const rawBalanceStr = market.tokenBalance.replace(/,/g, "");
+                        const tokenBal = Number(rawBalanceStr) || 0;
+                        const amt = ((tokenBal * pct) / 100).toFixed(Math.min(market.tokenDecimals, 6));
+                        return (
+                          <button
+                            key={pct}
+                            type="button"
+                            disabled={isTradingPending || tokenBal <= 0}
+                            onClick={() => executeDirectTrade("sell", amt)}
+                            className="py-1.5 text-[10px] font-bold border border-destructive/25 text-destructive hover:bg-destructive/8 rounded hover:border-destructive/55 transition-all"
+                          >
+                            {pct === 100 ? "MAX" : `${pct}%`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-muted-foreground/60">ESTIMATED OUTCOME</span>
                 <div className="relative">
                   <Input
                     type="number"
                     placeholder="0.00"
                     value={tradeOutputAmount}
                     onChange={(e) => handleOutputAmountChange(e.target.value)}
-                    className="font-mono text-lg bg-background/50 h-12 pr-20"
-                    data-testid="input-trade-output-amount"
+                    className="font-mono text-sm bg-background/50 h-11 border-border/60 focus-visible:ring-primary/45 pr-20"
                   />
-                  <div className="absolute right-3 top-3 font-mono text-xs font-bold text-muted-foreground tracking-wider">
+                  <span className="absolute right-3 top-3.5 text-[10px] font-bold text-muted-foreground tracking-wide">
                     {tradeTab === "buy" ? token.ticker : "USDC"}
-                  </div>
+                  </span>
                 </div>
               </div>
-
-              {/* Quick-fill buttons */}
-              {activeBalance !== null && activeBalance !== "—" && (
-                <div className="flex gap-1">
-                  {[25, 50, 100].map((pct) => (
-                    <button
-                      key={pct}
-                      onClick={() => {
-                        if (numericActiveBalance !== null) {
-                          handleInputAmountChange(formatBalance((numericActiveBalance * pct) / 100));
-                        }
-                      }}
-                      className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                      data-testid={`button-fill-${pct}`}
-                    >
-                      {pct}%
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => activeBalance && handleInputAmountChange(formatBalance(activeBalance))}
-                    className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                    data-testid="button-fill-max"
-                  >
-                    MAX
-                  </button>
-                </div>
-              )}
-
-              <div className="text-xs font-mono text-muted-foreground text-right">
-                {market.reserves ? "Quote uses current pool reserves" : "Waiting for pool reserves"}
-              </div>
-              {market.error && (
-                <div className="text-xs font-mono text-destructive text-right">
-                  Market refresh failed: {market.error}
-                </div>
-              )}
-              {trade.status.status === "error" && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
-                  {trade.status.message}
-                </div>
-              )}
-              {trade.status.status === "success" && (
-                <a
-                  href={`https://testnet.arcscan.app/tx/${trade.status.txHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-primary font-mono hover:underline"
-                >
-                  Swap confirmed. View transaction.
-                </a>
-              )}
             </div>
 
-            {/* Connect wallet prompt or trade button */}
+            {/* Error alerts or transaction notifications */}
+            {trade.status.status === "error" && (
+              <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-[11px] text-destructive leading-relaxed flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{trade.status.message}</span>
+              </div>
+            )}
+            {trade.status.status === "success" && (
+              <a
+                href={`https://testnet.arcscan.app/tx/${trade.status.txHash}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-lg border border-primary/20 bg-primary/5 p-3 text-[11px] text-primary hover:underline font-semibold leading-relaxed"
+              >
+                Swap confirmed. Click to view Txn on ArcScan.
+              </a>
+            )}
+
+            {/* Action buttons */}
             {state.status !== "connected" ? (
-              <div className="text-center text-xs text-muted-foreground font-mono py-2 border border-border/50 rounded-md bg-secondary/20">
-                Connect wallet to trade
+              <div className="text-center text-[10px] text-muted-foreground font-semibold py-2.5 border border-border/50 rounded-lg bg-secondary/20 uppercase tracking-wider">
+                Connect Wallet to Trade
               </div>
             ) : !state.isArcTestnet ? (
-              <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
-                Switch to Arc Testnet to trade
+              <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
+                Switch network to execute trades
               </div>
             ) : !market.isTradeable ? (
-              <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
-                Liquidity pool required before trading
+              <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
+                Liquidity pool required before swapping
               </div>
             ) : (
               <Button
-                className="w-full font-bold uppercase tracking-wider h-12 text-black"
+                className={`w-full font-extrabold uppercase tracking-widest h-12 text-black ${
+                  tradeTab === "buy" 
+                    ? "bg-primary hover:bg-primary/90" 
+                    : "bg-destructive hover:bg-destructive/90 text-white"
+                }`}
                 size="lg"
-                data-testid="button-place-trade"
                 disabled={!canTrade}
                 onClick={handleTrade}
               >
                 {isTradingPending ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    {trade.status.status === "approving" ? "Approving..." : "Confirming..."}
+                    Executing...
                   </span>
                 ) : (
                   `${tradeTab === "buy" ? "Buy" : "Sell"} ${token.ticker}`
                 )}
               </Button>
             )}
+
           </CardContent>
         </Card>
 
-        {/* Liquidity Manager */}
-        <Card className="border-border bg-card/80 backdrop-blur">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg uppercase tracking-tight">
-              Liquidity
+        {/* LP reserves overview panel */}
+        <Card className="border-border/80 bg-card/40 backdrop-blur-md">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary" />
+              Liquidity Reserves
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex bg-secondary/50 p-1 rounded-md">
+          <CardContent className="p-4 space-y-3 font-mono text-xs">
+            <div className="flex justify-between items-center pb-2 border-b border-border/20">
+              <span className="text-muted-foreground">AMM Pair Status</span>
+              <span className={`px-2 py-0.5 rounded-[3px] font-extrabold uppercase text-[9px] border ${
+                market.isTradeable 
+                  ? "bg-primary/10 border-primary/25 text-primary" 
+                  : "bg-yellow-500/10 border-yellow-500/25 text-yellow-400"
+              }`}>
+                {market.isTradeable ? "Active & Swappable" : "Unlisted reserves"}
+              </span>
+            </div>
+            
+            {market.isTradeable && poolTokenReserve && poolUsdcReserve ? (
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Pooled {token.ticker}</span>
+                  <span className="font-bold text-foreground">{poolTokenReserve}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Pooled WUSDC</span>
+                  <span className="font-bold text-foreground">{poolUsdcReserve}</span>
+                </div>
+                <div className="flex justify-between border-t border-border/20 pt-2 font-semibold">
+                  <span className="text-muted-foreground">Pool Valuation</span>
+                  <span className="text-primary font-extrabold">${(Number(poolUsdcReserve) * 2).toLocaleString(undefined, { maximumFractionDigits: 2 })} WUSDC</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground leading-normal text-center py-2">
+                Reserves are empty. Deposit liquidity to create swap pools.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Advanced Liquidity Pool Manager */}
+        <Card className="border-border/80 bg-card/40 backdrop-blur-md">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              Liquidity Manager
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-4">
+            
+            {/* Liquidity Add / Withdraw tabs */}
+            <div className="flex bg-secondary/35 p-1 rounded-lg border border-border/40">
               <Button
                 variant="ghost"
                 onClick={() => {
                   setLiquidityTab("add");
                   liquidity.reset();
                 }}
-                className={`flex-1 h-8 text-xs font-bold transition-colors ${
+                className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
                   liquidityTab === "add"
-                    ? "bg-background shadow-sm text-primary"
-                    : "text-muted-foreground hover:text-primary"
+                    ? "bg-primary text-black hover:bg-primary shadow-md"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Add
@@ -705,10 +1282,10 @@ export function TokenDetailPage() {
                   setLiquidityTab("withdraw");
                   liquidity.reset();
                 }}
-                className={`flex-1 h-8 text-xs font-bold transition-colors ${
+                className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
                   liquidityTab === "withdraw"
-                    ? "bg-background shadow-sm text-destructive"
-                    : "text-muted-foreground hover:text-destructive"
+                    ? "bg-destructive text-white hover:bg-destructive shadow-md"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Withdraw
@@ -716,11 +1293,11 @@ export function TokenDetailPage() {
             </div>
 
             {liquidityTab === "add" ? (
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 <div>
-                  <div className="mb-1 flex justify-between text-xs font-mono">
-                    <span className="text-muted-foreground">{token.ticker}</span>
-                    <span className="text-muted-foreground">Balance: {market.tokenBalance}</span>
+                  <div className="mb-1.5 flex justify-between text-[10px] font-bold text-muted-foreground">
+                    <span>TOKEN BALANCE</span>
+                    <span className="text-foreground">{market.tokenBalance}</span>
                   </div>
                   <Input
                     type="number"
@@ -734,15 +1311,13 @@ export function TokenDetailPage() {
                       }
                       liquidity.reset();
                     }}
-                    className="font-mono bg-background/50"
+                    className="font-mono bg-background/50 h-10 border-border/60"
                   />
                 </div>
                 <div>
-                  <div className="mb-1 flex justify-between text-xs font-mono">
-                    <span className="text-muted-foreground">WUSDC</span>
-                    <span className="text-muted-foreground">
-                      Wallet USDC: {usdcBalance ?? "0.000"}
-                    </span>
+                  <div className="mb-1.5 flex justify-between text-[10px] font-bold text-muted-foreground">
+                    <span>WUSDC BALANCE</span>
+                    <span className="text-foreground">{usdcBalance ?? "0.000"}</span>
                   </div>
                   <Input
                     type="number"
@@ -756,15 +1331,15 @@ export function TokenDetailPage() {
                       }
                       liquidity.reset();
                     }}
-                    className="font-mono bg-background/50"
+                    className="font-mono bg-background/50 h-10 border-border/60"
                   />
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-muted-foreground">LP Balance</span>
-                  <span className="text-foreground">{market.lpBalance}</span>
+              <div className="space-y-3.5">
+                <div className="flex justify-between items-center text-[10px] font-bold text-muted-foreground">
+                  <span>LP TOKEN SHARES</span>
+                  <span className="text-primary font-bold">{market.lpBalance} LP</span>
                 </div>
                 <Input
                   type="number"
@@ -774,28 +1349,31 @@ export function TokenDetailPage() {
                     setLiquidityLpAmount(event.target.value);
                     liquidity.reset();
                   }}
-                  className="font-mono bg-background/50"
+                  className="font-mono bg-background/50 h-10 border-border/60"
                 />
-                <div className="flex gap-1">
+                <div className="grid grid-cols-3 gap-1.5">
                   {[25, 50, 100].map((pct) => (
                     <button
                       key={pct}
+                      type="button"
                       onClick={() => {
                         setLiquidityLpAmount(formatBalance((numericLpBalance * pct) / 100));
                         liquidity.reset();
                       }}
-                      className="flex-1 text-[10px] font-mono py-1 rounded bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                      className="py-1 text-[9px] font-bold border border-border/70 rounded hover:border-primary/50 text-muted-foreground hover:text-primary transition-all uppercase"
                     >
-                      {pct}%
+                      {pct === 100 ? "MAX" : `${pct}%`}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
+            {/* Error alerts or transaction notifications */}
             {liquidity.status.status === "error" && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
-                {liquidity.status.message}
+              <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-[11px] text-destructive leading-relaxed flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{liquidity.status.message}</span>
               </div>
             )}
             {liquidity.status.status === "success" && (
@@ -803,27 +1381,32 @@ export function TokenDetailPage() {
                 href={`https://testnet.arcscan.app/tx/${liquidity.status.txHash}`}
                 target="_blank"
                 rel="noreferrer"
-                className="block rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-primary font-mono hover:underline"
+                className="block rounded-lg border border-primary/20 bg-primary/5 p-3 text-[11px] text-primary hover:underline font-semibold leading-relaxed"
               >
-                Liquidity {liquidity.status.action === "add" ? "added" : "withdrawn"}. View transaction.
+                Liquidity {liquidity.status.action === "add" ? "added" : "withdrawn"} confirmed. View on ArcScan.
               </a>
             )}
 
+            {/* Action buttons */}
             {state.status !== "connected" ? (
-              <div className="text-center text-xs text-muted-foreground font-mono py-2 border border-border/50 rounded-md bg-secondary/20">
-                Connect wallet to manage liquidity
+              <div className="text-center text-[10px] text-muted-foreground font-semibold py-2.5 border border-border/50 rounded-lg bg-secondary/20 uppercase tracking-wider">
+                Connect Wallet to Manage
               </div>
             ) : !state.isArcTestnet ? (
-              <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
-                Switch to Arc Testnet to manage liquidity
+              <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
+                Switch network to configure reserves
               </div>
             ) : liquidityTab === "withdraw" && !market.isTradeable ? (
-              <div className="text-center text-xs text-yellow-400 font-mono py-2 border border-yellow-500/30 rounded-md bg-yellow-500/10">
-                Add liquidity first to create the pool
+              <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
+                Add liquidity first to form the AMM pool
               </div>
             ) : (
               <Button
-                className="w-full font-bold uppercase tracking-wider h-11 text-black"
+                className={`w-full font-extrabold uppercase tracking-widest h-12 text-black ${
+                  liquidityTab === "add" 
+                    ? "bg-primary hover:bg-primary/90" 
+                    : "bg-destructive hover:bg-destructive/90 text-white"
+                }`}
                 disabled={liquidityTab === "add" ? !canAddLiquidity : !canWithdrawLiquidity}
                 onClick={liquidityTab === "add" ? handleAddLiquidity : handleWithdrawLiquidity}
               >
@@ -837,95 +1420,169 @@ export function TokenDetailPage() {
                 )}
               </Button>
             )}
+
           </CardContent>
         </Card>
 
-        {/* Pool Reserves */}
-        <Card className="border-border bg-card/50">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex justify-between text-xs font-mono uppercase">
-              <span className="text-muted-foreground">TOKEN/WUSDC Pool</span>
-              <span className={market.isTradeable ? "text-primary font-bold" : "text-yellow-400 font-bold"}>
-                {market.isTradeable ? "Live" : "Unlisted"}
-              </span>
-            </div>
-            {market.isTradeable && poolTokenReserve && poolUsdcReserve ? (
-              <div className="space-y-1 text-xs font-mono">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{token.ticker}</span>
-                  <span>{poolTokenReserve}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">WUSDC</span>
-                  <span>{poolUsdcReserve}</span>
-                </div>
-                <div className="flex justify-between border-t border-border/50 pt-2 mt-2">
-                  <span className="text-muted-foreground">Price</span>
-                  <span className="text-primary">${displayedPrice.toFixed(6)}</span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-[10px] text-muted-foreground text-center">
-                Create a liquidity pool before real swaps are available.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm uppercase tracking-wider">Recent Trades</CardTitle>
+        {/* Detailed links & Explorer parameters */}
+        <Card className="border-border/80 bg-card/40 backdrop-blur-md">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Lock className="h-4 w-4 text-primary" />
+              Registry Metadata
+            </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            {tradesLoading ? (
-              <div className="p-4 text-xs font-mono text-muted-foreground">Indexing swaps...</div>
-            ) : tradesError ? (
-              <div className="p-4 text-xs font-mono text-destructive">Could not load trades.</div>
-            ) : trades.length > 0 ? (
-              <div className="divide-y divide-border/50">
-                {trades.slice(0, 8).map((tradeItem) => (
-                  <a
-                    key={tradeItem.id}
-                    href={`https://testnet.arcscan.app/tx/${tradeItem.txHash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="grid grid-cols-[56px_1fr] gap-3 p-3 text-xs font-mono hover:bg-secondary/30 transition-colors"
-                  >
-                    <span className={tradeItem.side === "buy" ? "text-primary font-bold uppercase" : "text-destructive font-bold uppercase"}>
-                      {tradeItem.side}
-                    </span>
-                    <span className="min-w-0 space-y-1">
-                      <span className="flex justify-between gap-2">
-                        <span className="truncate">{formatBalance(tradeItem.tokenAmount)} {token.ticker}</span>
-                        <span className="text-muted-foreground">${formatBalance(tradeItem.wusdcAmount)}</span>
-                      </span>
-                      <span className="flex justify-between gap-2 text-[10px] text-muted-foreground">
-                        <span className="truncate">{formatAddress(tradeItem.traderAddress)}</span>
-                        <span>${tradeItem.executionPrice.toFixed(6)}</span>
-                      </span>
-                    </span>
-                  </a>
-                ))}
+          <CardContent className="p-4 space-y-3 font-mono text-xs">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Creator</span>
+              <Link href={`/portfolio?address=${token.creatorAddress}`} className="text-primary hover:underline font-bold">
+                {formatAddress(token.creatorAddress)}
+              </Link>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Creation Date</span>
+              <span className="text-foreground font-semibold">{new Date(token.createdAt).toLocaleDateString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total Supply</span>
+              <span className="text-foreground font-bold">{token.totalSupply.toLocaleString()}</span>
+            </div>
+            
+            {token.contractAddress && (
+              <div className="flex justify-between items-center gap-2 border-t border-border/20 pt-2 mt-2">
+                <span className="text-muted-foreground flex-shrink-0">ERC20 Contract</span>
+                <a
+                  href={`https://testnet.arcscan.app/address/${token.contractAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary truncate hover:underline flex items-center gap-1 font-bold"
+                  title={token.contractAddress}
+                >
+                  {token.contractAddress.slice(0, 6)}...{token.contractAddress.slice(-4)}
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                </a>
               </div>
-            ) : (
-              <div className="p-4 text-xs font-mono text-muted-foreground">
-                No on-chain swaps indexed yet.
+            )}
+
+            {token.pairAddress && (
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-muted-foreground flex-shrink-0">ApexiSwap LP Pair</span>
+                <a
+                  href={`https://testnet.arcscan.app/address/${token.pairAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary truncate hover:underline flex items-center gap-1 font-bold"
+                  title={token.pairAddress}
+                >
+                  {token.pairAddress.slice(0, 6)}...{token.pairAddress.slice(-4)}
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                </a>
+              </div>
+            )}
+
+            {/* Social media connections */}
+            {(token.website || token.twitter || token.telegram) && (
+              <div className="grid grid-cols-3 gap-2 border-t border-border/20 pt-3 mt-3">
+                {token.website && (
+                  <Button variant="outline" size="sm" className="h-8 font-mono text-[10px] uppercase gap-1" asChild>
+                    <a href={token.website} target="_blank" rel="noreferrer">
+                      <Globe className="h-3.5 w-3.5 shrink-0" />
+                      Website
+                    </a>
+                  </Button>
+                )}
+                {token.twitter && (
+                  <Button variant="outline" size="sm" className="h-8 font-mono text-[10px] uppercase gap-1" asChild>
+                    <a href={`https://twitter.com/${token.twitter}`} target="_blank" rel="noreferrer">
+                      <Twitter className="h-3.5 w-3.5 shrink-0" />
+                      Twitter
+                    </a>
+                  </Button>
+                )}
+                {token.telegram && (
+                  <Button variant="outline" size="sm" className="h-8 font-mono text-[10px] uppercase gap-1" asChild>
+                    <a href={token.telegram} target="_blank" rel="noreferrer">
+                      <Send className="h-3.5 w-3.5 shrink-0" />
+                      Telegram
+                    </a>
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
+
       </div>
+
     </div>
   );
 }
 
-function StatPanel({ label, value }: { label: string; value: string }) {
+function StatStripBox({ 
+  label, 
+  value, 
+  highlight = false, 
+  greenStyle = null 
+}: { 
+  label: string; 
+  value: string; 
+  highlight?: boolean; 
+  greenStyle?: boolean | null;
+}) {
   return (
-    <div className="bg-card/50 border border-border p-3 rounded-lg flex flex-col">
-      <span className="text-[10px] uppercase text-muted-foreground tracking-wider">
-        {label}
+    <div className="flex flex-col gap-1 p-2 bg-background/30 rounded-lg border border-border/20 text-center md:text-left">
+      <span className="text-[9px] uppercase tracking-widest text-muted-foreground/80 font-bold">{label}</span>
+      <span className={`font-bold font-mono tracking-tight ${
+        highlight 
+          ? "text-primary text-[13px] drop-shadow-[0_0_8px_rgba(34,197,94,0.2)]" 
+          : greenStyle === true 
+          ? "text-primary font-bold" 
+          : greenStyle === false 
+          ? "text-destructive font-bold" 
+          : "text-foreground"
+      }`}>
+        {value}
       </span>
-      <span className="font-mono font-bold">{value}</span>
+    </div>
+  );
+}
+
+function TabButton({ 
+  active, 
+  onClick, 
+  label, 
+  count 
+}: { 
+  active: boolean; 
+  onClick: () => void; 
+  label: string; 
+  count: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-5 py-3 text-[10px] uppercase font-bold tracking-widest font-mono border-b-2 transition-all shrink-0 flex items-center gap-1.5 ${
+        active
+          ? "border-primary text-primary bg-background/40"
+          : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/10"
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+        active 
+          ? "bg-primary/20 text-primary border border-primary/25" 
+          : "bg-secondary/40 text-muted-foreground border border-border/20"
+      }`}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function EmptyTabState({ text }: { text: string }) {
+  return (
+    <div className="p-8 text-center font-mono text-xs text-muted-foreground leading-relaxed">
+      {text}
     </div>
   );
 }
