@@ -14,6 +14,4 @@ export const ListTokensSort = {
   newest: "newest",
   marketCap: "marketCap",
   volume: "volume",
-  mostActive: "mostActive",
-  topGainers: "topGainers",
 } as const;

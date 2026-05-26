@@ -52,6 +52,17 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
       crosshair: {
         mode: 1,
       },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        mouseWheel: true,
+        pinch: true,
+      },
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {

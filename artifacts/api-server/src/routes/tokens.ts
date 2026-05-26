@@ -15,6 +15,12 @@ import {
   listTokens,
   updateTokenMarket,
   type Token,
+  db,
+  getCommentsForToken,
+  saveComment,
+  toggleEmojiReaction,
+  getReactionsForToken,
+  getRecentComments,
 } from "../lib/token-store";
 import { logger } from "../lib/logger";
 import { indexTokenSwapEvents } from "../lib/swap-indexer";
@@ -515,6 +521,75 @@ router.get("/portfolio/:address", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err, address: req.params.address }, "GET /api/portfolio/:address failed");
     res.status(500).json({ error: "Failed to generate portfolio." });
+  }
+});
+
+router.get("/tokens/:id/comments", async (req, res): Promise<void> => {
+  try {
+    const id = req.params.id;
+    const comments = getCommentsForToken(id);
+    const reactions = getReactionsForToken(id);
+    res.json({ comments, reactions });
+  } catch (err) {
+    logger.error({ err, id: req.params.id }, "GET /api/tokens/:id/comments failed");
+    res.status(500).json({ error: "Failed to load comments." });
+  }
+});
+
+router.post("/tokens/:id/comments", async (req, res): Promise<void> => {
+  try {
+    const id = req.params.id;
+    const { authorAddress, content, parentId } = req.body;
+    if (!authorAddress || !content) {
+      res.status(400).json({ error: "authorAddress and content are required." });
+      return;
+    }
+
+    const comment = saveComment({
+      tokenId: id,
+      authorAddress,
+      content,
+      parentId: parentId || null,
+    });
+
+    res.status(201).json(comment);
+  } catch (err) {
+    logger.error({ err, id: req.params.id }, "POST /api/tokens/:id/comments failed");
+    res.status(500).json({ error: "Failed to post comment." });
+  }
+});
+
+router.post("/tokens/:id/reactions", async (req, res): Promise<void> => {
+  try {
+    const id = req.params.id;
+    const { commentId, userAddress, emoji } = req.body;
+    if (!userAddress || !emoji) {
+      res.status(400).json({ error: "userAddress and emoji are required." });
+      return;
+    }
+
+    const result = toggleEmojiReaction({
+      tokenId: id,
+      commentId: commentId || null,
+      userAddress,
+      emoji,
+    });
+
+    res.json(result);
+  } catch (err) {
+    logger.error({ err, id: req.params.id }, "POST /api/tokens/:id/reactions failed");
+    res.status(500).json({ error: "Failed to toggle reaction." });
+  }
+});
+
+router.get("/community/activity", async (req, res): Promise<void> => {
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 10;
+    const comments = getRecentComments(limit);
+    res.json(comments);
+  } catch (err) {
+    logger.error({ err }, "GET /api/community/activity failed");
+    res.status(500).json({ error: "Failed to load community activity." });
   }
 });
 

@@ -205,9 +205,6 @@ export function HomePage() {
     const minCap = Number(minMarketCap) || 0;
 
     const list = tokens.filter((token) => {
-      const live = token.marketType === "amm_pool" && Boolean(token.pairAddress);
-      if (marketFilter === "live" && !live) return false;
-      if (marketFilter === "needs-pool" && live) return false;
       if (marketFilter === "watchlist" && !watchlist.includes(token.id)) return false;
       if (minVol > 0 && token.volume24h < minVol) return false;
       if (minCap > 0 && token.marketCap < minCap) return false;
@@ -404,7 +401,7 @@ export function HomePage() {
 
             {/* Custom Tab Segment for Filters */}
             <div className="flex bg-secondary/25 p-1 rounded-md border border-border/30">
-              {(["all", "live", "needs-pool", "watchlist"] as MarketFilter[]).map((filter) => (
+              {(["all", "watchlist"] as MarketFilter[]).map((filter) => (
                 <Button
                   key={filter}
                   variant="ghost"
@@ -520,7 +517,6 @@ export function HomePage() {
                         <th className="px-3 py-2 text-right">Buys/Sells</th>
                         <th className="px-3 py-2 text-right">Holders</th>
                         <th className="px-3 py-2 text-right">Age</th>
-                        <th className="px-3 py-2 text-center">Status</th>
                         <th className="px-3 py-2 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -590,11 +586,6 @@ export function HomePage() {
                             </td>
                             <td className="px-3 py-2 text-right font-mono text-muted-foreground border-y border-border/30">
                               {ageHours < 1 ? "<1h" : `${ageHours}h`}
-                            </td>
-                            <td className="px-3 py-2 text-center border-y border-border/30">
-                              <span className={`rounded border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${live ? "border-primary/30 bg-primary/10 text-primary" : "border-yellow-400/30 bg-yellow-400/10 text-yellow-400"}`}>
-                                {live ? "Live" : "Needs Pool"}
-                              </span>
                             </td>
                             <td className="rounded-r-lg px-3 py-2 text-right border-y border-r border-border/30">
                               <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-full hover:bg-secondary/40">

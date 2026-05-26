@@ -23,6 +23,7 @@ import type {
   HealthStatus,
   ListTokensParams,
   PlatformStats,
+  RegisterMockTradeBody,
   Token,
   TokenInput,
   TokenMarketInput,
@@ -539,6 +540,93 @@ export const useUpdateTokenMarket = <
   TContext
 > => {
   return useMutation(getUpdateTokenMarketMutationOptions(options));
+};
+
+/**
+ * @summary Register a simulated mock trade for non-Arc chains
+ */
+export const getRegisterMockTradeUrl = (id: string) => {
+  return `/api/tokens/${id}/mock-trade`;
+};
+
+export const registerMockTrade = async (
+  id: string,
+  registerMockTradeBody: RegisterMockTradeBody,
+  options?: RequestInit,
+): Promise<Trade> => {
+  return customFetch<Trade>(getRegisterMockTradeUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(registerMockTradeBody),
+  });
+};
+
+export const getRegisterMockTradeMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerMockTrade>>,
+    TError,
+    { id: string; data: BodyType<RegisterMockTradeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof registerMockTrade>>,
+  TError,
+  { id: string; data: BodyType<RegisterMockTradeBody> },
+  TContext
+> => {
+  const mutationKey = ["registerMockTrade"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof registerMockTrade>>,
+    { id: string; data: BodyType<RegisterMockTradeBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return registerMockTrade(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegisterMockTradeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof registerMockTrade>>
+>;
+export type RegisterMockTradeMutationBody = BodyType<RegisterMockTradeBody>;
+export type RegisterMockTradeMutationError = ErrorType<void>;
+
+/**
+ * @summary Register a simulated mock trade for non-Arc chains
+ */
+export const useRegisterMockTrade = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerMockTrade>>,
+    TError,
+    { id: string; data: BodyType<RegisterMockTradeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof registerMockTrade>>,
+  TError,
+  { id: string; data: BodyType<RegisterMockTradeBody> },
+  TContext
+> => {
+  return useMutation(getRegisterMockTradeMutationOptions(options));
 };
 
 /**

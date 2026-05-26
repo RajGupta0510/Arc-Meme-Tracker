@@ -19,7 +19,7 @@ export const HealthCheckResponse = zod.object({
  * @summary List all tokens
  */
 export const ListTokensQueryParams = zod.object({
-  sort: zod.enum(["trending", "newest", "marketCap", "volume", "mostActive", "topGainers"]).optional(),
+  sort: zod.enum(["trending", "newest", "marketCap", "volume"]).optional(),
   limit: zod.coerce.number().optional(),
 });
 
@@ -46,6 +46,7 @@ export const ListTokensResponseItem = zod.object({
   website: zod.string().nullish(),
   twitter: zod.string().nullish(),
   telegram: zod.string().nullish(),
+  chain: zod.enum(["arc", "ethereum", "bsc", "solana", "base"]),
 });
 export const ListTokensResponse = zod.array(ListTokensResponseItem);
 
@@ -68,6 +69,7 @@ export const LaunchTokenBody = zod.object({
   totalSupply: zod.number().optional(),
   contractAddress: zod.string().optional(),
   creatorAddress: zod.string().optional(),
+  chain: zod.enum(["arc", "ethereum", "bsc", "solana", "base"]).optional(),
 });
 
 /**
@@ -96,6 +98,7 @@ export const GetTrendingTokensResponseItem = zod.object({
   website: zod.string().nullish(),
   twitter: zod.string().nullish(),
   telegram: zod.string().nullish(),
+  chain: zod.enum(["arc", "ethereum", "bsc", "solana", "base"]),
 });
 export const GetTrendingTokensResponse = zod.array(
   GetTrendingTokensResponseItem,
@@ -131,6 +134,7 @@ export const GetTokenResponse = zod.object({
   website: zod.string().nullish(),
   twitter: zod.string().nullish(),
   telegram: zod.string().nullish(),
+  chain: zod.enum(["arc", "ethereum", "bsc", "solana", "base"]),
 });
 
 /**
@@ -169,6 +173,34 @@ export const UpdateTokenMarketResponse = zod.object({
   website: zod.string().nullish(),
   twitter: zod.string().nullish(),
   telegram: zod.string().nullish(),
+  chain: zod.enum(["arc", "ethereum", "bsc", "solana", "base"]),
+});
+
+/**
+ * @summary Register a simulated mock trade for non-Arc chains
+ */
+export const RegisterMockTradeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RegisterMockTradeBody = zod.object({
+  side: zod.enum(["buy", "sell"]),
+  amount: zod.string(),
+});
+
+export const RegisterMockTradeResponse = zod.object({
+  id: zod.string(),
+  tokenId: zod.string(),
+  pairAddress: zod.string(),
+  txHash: zod.string(),
+  logIndex: zod.number(),
+  blockNumber: zod.number(),
+  side: zod.enum(["buy", "sell"]),
+  tokenAmount: zod.number(),
+  wusdcAmount: zod.number(),
+  executionPrice: zod.number(),
+  traderAddress: zod.string(),
+  timestamp: zod.string(),
 });
 
 /**

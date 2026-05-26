@@ -17,6 +17,16 @@ export const TokenMarketType = {
   amm_pool: "amm_pool",
 } as const;
 
+export type TokenChain = (typeof TokenChain)[keyof typeof TokenChain];
+
+export const TokenChain = {
+  arc: "arc",
+  ethereum: "ethereum",
+  bsc: "bsc",
+  solana: "solana",
+  base: "base",
+} as const;
+
 export interface Token {
   id: string;
   name: string;
@@ -47,7 +57,19 @@ export interface Token {
   twitter?: string | null;
   /** @nullable */
   telegram?: string | null;
+  chain: TokenChain;
 }
+
+export type TokenInputChain =
+  (typeof TokenInputChain)[keyof typeof TokenInputChain];
+
+export const TokenInputChain = {
+  arc: "arc",
+  ethereum: "ethereum",
+  bsc: "bsc",
+  solana: "solana",
+  base: "base",
+} as const;
 
 export interface TokenInput {
   /**
@@ -69,6 +91,7 @@ export interface TokenInput {
   totalSupply?: number;
   contractAddress?: string;
   creatorAddress?: string;
+  chain?: TokenInputChain;
 }
 
 export type TokenMarketInputMarketType =
@@ -148,9 +171,20 @@ export const ListTokensSort = {
   newest: "newest",
   marketCap: "marketCap",
   volume: "volume",
-  mostActive: "mostActive",
-  topGainers: "topGainers",
 } as const;
+
+export type RegisterMockTradeBodySide =
+  (typeof RegisterMockTradeBodySide)[keyof typeof RegisterMockTradeBodySide];
+
+export const RegisterMockTradeBodySide = {
+  buy: "buy",
+  sell: "sell",
+} as const;
+
+export type RegisterMockTradeBody = {
+  side: RegisterMockTradeBodySide;
+  amount: string;
+};
 
 export type GetTokenCandlesParams = {
   interval?: GetTokenCandlesInterval;

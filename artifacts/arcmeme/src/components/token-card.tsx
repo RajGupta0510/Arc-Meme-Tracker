@@ -101,13 +101,6 @@ export function TokenCard({
               <div>
                 <div className="font-bold uppercase tracking-tight flex items-center gap-2 text-foreground/90 font-mono">
                   <span style={{ color: accentColor }} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.05)]">${ticker}</span>
-                  <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded-sm border ${
-                    isLive
-                      ? "text-primary border-primary/25 bg-primary/8"
-                      : "text-yellow-400 border-yellow-400/25 bg-yellow-400/8"
-                  }`}>
-                    {isLive ? "Live" : "Needs Pool"}
-                  </span>
                 </div>
                 <div className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{token.name}</div>
               </div>
@@ -137,7 +130,7 @@ export function TokenCard({
 
           <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground border-t border-border/30 pt-3">
             <span className="hover:text-foreground/80 transition-colors">{formatAddress(token.contractAddress ?? "")}</span>
-            <span className="uppercase text-[8px] px-1 bg-secondary/30 rounded border border-border/20">{isLive ? "Tradeable" : "Add liquidity"}</span>
+            <span className="uppercase text-[8px] px-1 bg-secondary/30 rounded border border-border/20">Tradeable</span>
           </div>
         </Link>
 
@@ -158,7 +151,7 @@ export function TokenCard({
             className="flex flex-1 items-center justify-center border-l border-border/40 px-3 py-2 text-[10px] uppercase text-primary transition-all duration-300 hover:bg-primary/10"
             style={{ color: accentColor }}
           >
-            {isLive ? "Trade" : "Pool"} →
+            Trade →
           </Link>
         </div>
       </Card>

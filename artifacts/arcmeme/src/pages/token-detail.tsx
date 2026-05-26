@@ -37,6 +37,11 @@ import {
 import { formatUnits, parseUnits } from "ethers";
 import { calculateAmountIn, calculateAmountOut } from "@/lib/arc-amm";
 import { Link } from "wouter";
+import { useTokenSecurity } from "@/hooks/use-token-security";
+import { CommentsSection } from "@/components/comments-section";
+import { ShieldAlert, ShieldCheck } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+
 
 const candleIntervals = ["1m", "5m", "15m", "1h", "4h"] as const;
 type CandleInterval = (typeof candleIntervals)[number];
@@ -120,6 +125,8 @@ export function TokenDetailPage() {
   const [liquidityUsdcAmount, setLiquidityUsdcAmount] = useState("");
   const [liquidityLpAmount, setLiquidityLpAmount] = useState("");
   const [activeTerminalTab, setActiveTerminalTab] = useState<"txs" | "traders" | "holders" | "lps">("txs");
+  const [mainDetailTab, setMainDetailTab] = useState<"ledger" | "security" | "discussion">("ledger");
+  const [isMobileTradeOpen, setIsMobileTradeOpen] = useState(false);
 
   const [notifiedWhaleSwaps, setNotifiedWhaleSwaps] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -329,11 +336,220 @@ export function TokenDetailPage() {
     };
   }, [token, trades, displayPrice, market.reserves, token?.pairAddress, token?.totalSupply, walletAddress, market.lpBalance, poolUsdcReserve]);
 
+  const securityAudit = useTokenSecurity(
+    token,
+    computedStats.holders,
+    poolUsdcReserve !== null ? Number(poolUsdcReserve) : null
+  );
+
   const copyToClipboard = (addr: string) => {
     navigator.clipboard.writeText(addr);
     setCopiedAddress(addr);
     toast({ title: "Address Copied", description: "Copied successfully to clipboard." });
     setTimeout(() => setCopiedAddress(null), 2000);
+  };
+
+  const renderTradeTerminal = () => {
+    if (!token) return null;
+    return (
+      <div className="space-y-4 font-mono text-xs">
+        {/* Buy / Sell selector tabs */}
+        <div className="flex bg-secondary/35 p-1 rounded-lg border border-border/40">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setTradeTab("buy");
+              setTradeInputAmount("");
+              setTradeOutputAmount("");
+              trade.reset();
+            }}
+            className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
+              tradeTab === "buy"
+                ? "bg-primary text-black hover:bg-primary shadow-md"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Buy
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setTradeTab("sell");
+              setTradeInputAmount("");
+              setTradeOutputAmount("");
+              trade.reset();
+            }}
+            className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
+              tradeTab === "sell"
+                ? "bg-destructive text-white hover:bg-destructive shadow-md"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Sell
+          </Button>
+        </div>
+
+        {/* Balances details */}
+        <div className="flex justify-between items-center text-[10px] font-semibold text-muted-foreground/80">
+          <span>ACTIVE ASSET</span>
+          <span className="flex items-center gap-1.5">
+            Balance:{" "}
+            <span className="text-foreground font-bold font-mono">
+              {activeBalance !== null ? `${tradeTab === "buy" ? "$" : ""}${activeBalance}` : "—"}
+            </span>
+          </span>
+        </div>
+
+        {/* Payload Input */}
+        <div className="space-y-3.5">
+          <div className="relative">
+            <Input
+              type="number"
+              placeholder="0.00"
+              value={tradeInputAmount}
+              onChange={(e) => handleInputAmountChange(e.target.value)}
+              className="font-mono text-sm bg-background/50 h-11 border-border/60 focus-visible:ring-primary/45 pr-20"
+            />
+            <span className="absolute right-3 top-3.5 text-[10px] font-bold text-muted-foreground tracking-wide">
+              {tradeTab === "buy" ? "USDC" : token.ticker}
+            </span>
+          </div>
+
+          {/* Quick filling percent tabs */}
+          {activeBalance !== null && activeBalance !== "—" && (
+            <div className="grid grid-cols-4 gap-1.5">
+              {[25, 50, 75, 100].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => {
+                    if (numericActiveBalance !== null) {
+                      handleInputAmountChange(formatBalance((numericActiveBalance * pct) / 100));
+                    }
+                  }}
+                  className="py-1 text-[9px] font-bold border border-border/70 rounded hover:border-primary/50 text-muted-foreground hover:text-primary transition-all uppercase"
+                >
+                  {pct === 100 ? "MAX" : `${pct}%`}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Direct Instant trade executions */}
+          {state.status === "connected" && state.isArcTestnet && market.isTradeable && market.reserves && (
+            <div className="space-y-1.5 pt-3.5 border-t border-border/30">
+              <div className="flex justify-between text-[9px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-1.5">
+                <span>One-Click Instant Execution</span>
+                <span>Direct Swap</span>
+              </div>
+              {tradeTab === "buy" ? (
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[10, 50, 100, 250].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      disabled={isTradingPending}
+                      onClick={() => executeDirectTrade("buy", amt.toString())}
+                      className="py-1.5 text-[10px] font-bold border border-primary/25 text-primary hover:bg-primary/8 rounded hover:border-primary/55 transition-all"
+                    >
+                      +{amt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[25, 50, 100].map((pct) => {
+                    const rawBalanceStr = market.tokenBalance.replace(/,/g, "");
+                    const tokenBal = Number(rawBalanceStr) || 0;
+                    const amt = ((tokenBal * pct) / 100).toFixed(Math.min(market.tokenDecimals, 6));
+                    return (
+                      <button
+                        key={pct}
+                        type="button"
+                        disabled={isTradingPending || tokenBal <= 0}
+                        onClick={() => executeDirectTrade("sell", amt)}
+                        className="py-1.5 text-[10px] font-bold border border-destructive/25 text-destructive hover:bg-destructive/8 rounded hover:border-destructive/55 transition-all"
+                      >
+                        {pct === 100 ? "MAX" : `${pct}%`}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold text-muted-foreground/60">ESTIMATED OUTCOME</span>
+            <div className="relative">
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={tradeOutputAmount}
+                onChange={(e) => handleOutputAmountChange(e.target.value)}
+                className="font-mono text-sm bg-background/50 h-11 border-border/60 focus-visible:ring-primary/45 pr-20"
+              />
+              <span className="absolute right-3 top-3.5 text-[10px] font-bold text-muted-foreground tracking-wide">
+                {tradeTab === "buy" ? token.ticker : "USDC"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Error alerts or transaction notifications */}
+        {trade.status.status === "error" && (
+          <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-[11px] text-destructive leading-relaxed flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{trade.status.message}</span>
+          </div>
+        )}
+        {trade.status.status === "success" && (
+          <a
+            href={`https://testnet.arcscan.app/tx/${trade.status.txHash}`}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-lg border border-primary/20 bg-primary/5 p-3 text-[11px] text-primary hover:underline font-semibold leading-relaxed"
+          >
+            Swap confirmed. Click to view Txn on ArcScan.
+          </a>
+        )}
+
+        {/* Action buttons */}
+        {state.status !== "connected" ? (
+          <div className="text-center text-[10px] text-muted-foreground font-semibold py-2.5 border border-border/50 rounded-lg bg-secondary/20 uppercase tracking-wider">
+            Connect Wallet to Trade
+          </div>
+        ) : !state.isArcTestnet ? (
+          <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
+            Switch network to execute trades
+          </div>
+        ) : !market.isTradeable ? (
+          <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
+            Liquidity pool required before swapping
+          </div>
+        ) : (
+          <Button
+            className={`w-full font-extrabold uppercase tracking-widest h-12 text-black ${
+              tradeTab === "buy" 
+                ? "bg-primary hover:bg-primary/90" 
+                : "bg-destructive hover:bg-destructive/90 text-white"
+            }`}
+            size="lg"
+            disabled={!canTrade}
+            onClick={handleTrade}
+          >
+            {isTradingPending ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Executing...
+              </span>
+            ) : (
+              `${tradeTab === "buy" ? "Buy" : "Sell"} ${token.ticker}`
+            )}
+          </Button>
+        )}
+      </div>
+    );
   };
 
 
@@ -714,8 +930,47 @@ export function TokenDetailPage() {
           </CardContent>
         </Card>
 
-        {/* ─── TERMINAL TABS & ADVANCED LEDGERS ─── */}
-        <Card className="bg-card/40 border-border/80 backdrop-blur-md overflow-hidden">
+        {/* ─── MAIN DETAIL TABS ─── */}
+        <div className="flex border-b border-border/40 pb-0.5 gap-2 overflow-x-auto shrink-0 font-mono text-xs">
+          {[
+            { id: "ledger", label: "Market Ledgers", icon: Activity },
+            { id: "security", label: "Security Audit", icon: ShieldCheck, accentColor: securityAudit.status === "Secure" ? "#22c55e" : "#eab308" },
+            { id: "discussion", label: "Meme Sentiment Feed", icon: MessageSquare }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = mainDetailTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setMainDetailTab(tab.id as any)}
+                className={`flex items-center gap-2 px-4 py-2 border-t border-x rounded-t-lg font-bold transition-all ${
+                  active
+                    ? "bg-card/40 border-border/80 text-primary border-b-transparent shadow-[0_-2px_10px_rgba(34,197,94,0.06)]"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+                style={tab.accentColor && active ? { color: tab.accentColor } : {}}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span>{tab.label}</span>
+                {tab.id === "security" && (
+                  <span 
+                    className="text-[9px] px-1 rounded-sm border" 
+                    style={{ 
+                      borderColor: securityAudit.status === "Secure" ? "rgba(34,197,94,0.3)" : "rgba(234,179,8,0.3)",
+                      backgroundColor: securityAudit.status === "Secure" ? "rgba(34,197,94,0.05)" : "rgba(234,179,8,0.05)",
+                      color: securityAudit.status === "Secure" ? "#22c55e" : "#eab308"
+                    }}
+                  >
+                    {securityAudit.score}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {mainDetailTab === "ledger" && (
+          <Card className="bg-card/40 border-border/80 backdrop-blur-md overflow-hidden">
           <CardHeader className="p-0 border-b border-border/50 bg-secondary/15">
             <div className="flex overflow-x-auto">
               <TabButton
@@ -992,11 +1247,132 @@ export function TokenDetailPage() {
 
           </CardContent>
         </Card>
+      )}
 
-      </div>
+      {mainDetailTab === "security" && (
+        <Card className="bg-card/40 border-border/80 backdrop-blur-md overflow-hidden">
+          <CardHeader className="border-b border-border/50 bg-secondary/15 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4.5 w-4.5 text-primary" />
+                <CardTitle className="text-xs uppercase tracking-wider font-mono">
+                  Token Trust Audit Report
+                </CardTitle>
+              </div>
+              <div className="flex items-center gap-2 font-mono">
+                <span className="text-xs text-muted-foreground uppercase">Safety Grade:</span>
+                <span 
+                  className="text-lg font-extrabold px-2 py-0.5 rounded border leading-none"
+                  style={{
+                    color: securityAudit.score >= 70 ? "#22c55e" : securityAudit.score >= 50 ? "#eab308" : "#ef4444",
+                    borderColor: securityAudit.score >= 70 ? "rgba(34,197,94,0.3)" : securityAudit.score >= 50 ? "rgba(234,179,8,0.3)" : "rgba(239,68,68,0.3)",
+                    backgroundColor: securityAudit.score >= 70 ? "rgba(34,197,94,0.05)" : securityAudit.score >= 50 ? "rgba(234,179,8,0.05)" : "rgba(239,68,68,0.05)"
+                  }}
+                >
+                  {securityAudit.grade}
+                </span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-5 space-y-6 font-mono text-xs">
+            
+            {/* Trust Score circular gauge or strip */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-5 bg-background/30 p-4 border border-border/40 rounded-xl">
+              <div className="space-y-1 text-center md:text-left">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-widest">Calculated Trust Weight</div>
+                <div className="text-3xl font-extrabold text-foreground flex items-baseline justify-center md:justify-start gap-1">
+                  {securityAudit.score} <span className="text-xs text-muted-foreground font-normal">/ 100</span>
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase">Risk Profile: <span className="font-bold text-foreground">{securityAudit.status}</span></div>
+              </div>
+
+              <div className="w-full md:w-3/5 space-y-1">
+                <div className="flex justify-between text-[9px] text-muted-foreground uppercase">
+                  <span>Vulnerability Scan</span>
+                  <span>{securityAudit.score}% Secured</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-secondary/35 border border-border/20 flex overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-500" 
+                    style={{ 
+                      width: `${securityAudit.score}%`,
+                      backgroundColor: securityAudit.score >= 70 ? "#22c55e" : securityAudit.score >= 50 ? "#eab308" : "#ef4444" 
+                    }} 
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Safety Checklist Table/List */}
+            <div className="space-y-3.5">
+              <h4 className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Safety Audit Checklist</h4>
+              <div className="divide-y divide-border/30 border border-border/30 rounded-lg overflow-hidden bg-background/10">
+                {Object.entries(securityAudit.checks).map(([key, check]) => {
+                  const pass = check.status === "pass";
+                  const fail = check.status === "fail";
+                  return (
+                    <div key={key} className="flex items-center justify-between p-3">
+                      <div className="flex items-center gap-2">
+                        {pass ? (
+                          <ShieldCheck className="h-4.5 w-4.5 text-primary shrink-0" />
+                        ) : (
+                          <ShieldAlert className={`h-4.5 w-4.5 shrink-0 ${fail ? "text-destructive" : "text-yellow-400"}`} />
+                        )}
+                        <span className="font-bold text-foreground/95">{check.label}</span>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-muted-foreground">{check.value}</span>
+                        <span 
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                            pass
+                              ? "bg-primary/10 border-primary/25 text-primary"
+                              : fail
+                              ? "bg-destructive/10 border-destructive/25 text-destructive"
+                              : "bg-yellow-500/10 border-yellow-500/25 text-yellow-400"
+                          }`}
+                        >
+                          {check.status === "pass" ? "Passed" : check.status === "warn" ? "Warning" : "Critical"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Suspicious flags or additional heuristics info */}
+            <div className="text-[10px] leading-relaxed text-muted-foreground bg-secondary/15 rounded-lg p-3.5 border border-border/30 space-y-1.5">
+              <div className="font-bold uppercase text-foreground/75 flex items-center gap-1.5">
+                <Activity className="h-3.5 w-3.5 text-primary" /> Architecture Extensibility Layer
+              </div>
+              <p>
+                ArcMeme Market OS scans real-time liquidity depth, transaction velocity, holder concentrations, and smart contract mint logic. Rug-pull and honeypot heuristics are computed on-chain. Keep LP locks audited before trading meme assets.
+              </p>
+            </div>
+
+          </CardContent>
+        </Card>
+      )}
+
+      {mainDetailTab === "discussion" && (
+        <Card className="bg-card/40 border-border/80 backdrop-blur-md overflow-hidden">
+          <CardHeader className="border-b border-border/50 bg-secondary/15 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4.5 w-4.5 text-primary" />
+              <CardTitle className="text-xs uppercase tracking-wider font-mono">
+                Meme sentiment discussion
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-5">
+            <CommentsSection tokenId={token.id} connectedWalletAddress={walletAddress} />
+          </CardContent>
+        </Card>
+      )}
+    </div>
 
       {/* ─── RIGHT COLUMN: Compact Trading Widgets & Socials ─── */}
-      <div className="w-full lg:w-[360px] flex flex-col gap-4 shrink-0 font-mono">
+      <div className="hidden lg:flex w-full lg:w-[360px] flex-col gap-4 shrink-0 font-mono">
         
         {/* Trading widget terminal */}
         <Card className="border-border/80 bg-card/40 backdrop-blur-md">
@@ -1006,204 +1382,8 @@ export function TokenDetailPage() {
               Trade Execution Terminal
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4 pt-4">
-            
-            {/* Buy / Sell selector tabs */}
-            <div className="flex bg-secondary/35 p-1 rounded-lg border border-border/40">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setTradeTab("buy");
-                  setTradeInputAmount("");
-                  setTradeOutputAmount("");
-                  trade.reset();
-                }}
-                className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
-                  tradeTab === "buy"
-                    ? "bg-primary text-black hover:bg-primary shadow-md"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Buy
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setTradeTab("sell");
-                  setTradeInputAmount("");
-                  setTradeOutputAmount("");
-                  trade.reset();
-                }}
-                className={`flex-1 h-8 text-[11px] uppercase font-bold transition-all ${
-                  tradeTab === "sell"
-                    ? "bg-destructive text-white hover:bg-destructive shadow-md"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Sell
-              </Button>
-            </div>
-
-            {/* Balances details */}
-            <div className="flex justify-between items-center text-[10px] font-semibold text-muted-foreground/80">
-              <span>ACTIVE ASSET</span>
-              <span className="flex items-center gap-1.5">
-                Balance:{" "}
-                <span className="text-foreground font-bold font-mono">
-                  {activeBalance !== null ? `${tradeTab === "buy" ? "$" : ""}${activeBalance}` : "—"}
-                </span>
-              </span>
-            </div>
-
-            {/* Payload Input */}
-            <div className="space-y-3.5">
-              <div className="relative">
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  value={tradeInputAmount}
-                  onChange={(e) => handleInputAmountChange(e.target.value)}
-                  className="font-mono text-sm bg-background/50 h-11 border-border/60 focus-visible:ring-primary/45 pr-20"
-                />
-                <span className="absolute right-3 top-3.5 text-[10px] font-bold text-muted-foreground tracking-wide">
-                  {tradeTab === "buy" ? "USDC" : token.ticker}
-                </span>
-              </div>
-
-              {/* Quick filling percent tabs */}
-              {activeBalance !== null && activeBalance !== "—" && (
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[25, 50, 75, 100].map((pct) => (
-                    <button
-                      key={pct}
-                      type="button"
-                      onClick={() => {
-                        if (numericActiveBalance !== null) {
-                          handleInputAmountChange(formatBalance((numericActiveBalance * pct) / 100));
-                        }
-                      }}
-                      className="py-1 text-[9px] font-bold border border-border/70 rounded hover:border-primary/50 text-muted-foreground hover:text-primary transition-all uppercase"
-                    >
-                      {pct === 100 ? "MAX" : `${pct}%`}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Direct Instant trade executions */}
-              {state.status === "connected" && state.isArcTestnet && market.isTradeable && market.reserves && (
-                <div className="space-y-1.5 pt-3.5 border-t border-border/30">
-                  <div className="flex justify-between text-[9px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-1.5">
-                    <span>One-Click Instant Execution</span>
-                    <span>Direct Swap</span>
-                  </div>
-                  {tradeTab === "buy" ? (
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[10, 50, 100, 250].map((amt) => (
-                        <button
-                          key={amt}
-                          type="button"
-                          disabled={isTradingPending}
-                          onClick={() => executeDirectTrade("buy", amt.toString())}
-                          className="py-1.5 text-[10px] font-bold border border-primary/25 text-primary hover:bg-primary/8 rounded hover:border-primary/55 transition-all"
-                        >
-                          +{amt}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {[25, 50, 100].map((pct) => {
-                        const rawBalanceStr = market.tokenBalance.replace(/,/g, "");
-                        const tokenBal = Number(rawBalanceStr) || 0;
-                        const amt = ((tokenBal * pct) / 100).toFixed(Math.min(market.tokenDecimals, 6));
-                        return (
-                          <button
-                            key={pct}
-                            type="button"
-                            disabled={isTradingPending || tokenBal <= 0}
-                            onClick={() => executeDirectTrade("sell", amt)}
-                            className="py-1.5 text-[10px] font-bold border border-destructive/25 text-destructive hover:bg-destructive/8 rounded hover:border-destructive/55 transition-all"
-                          >
-                            {pct === 100 ? "MAX" : `${pct}%`}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-bold text-muted-foreground/60">ESTIMATED OUTCOME</span>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    placeholder="0.00"
-                    value={tradeOutputAmount}
-                    onChange={(e) => handleOutputAmountChange(e.target.value)}
-                    className="font-mono text-sm bg-background/50 h-11 border-border/60 focus-visible:ring-primary/45 pr-20"
-                  />
-                  <span className="absolute right-3 top-3.5 text-[10px] font-bold text-muted-foreground tracking-wide">
-                    {tradeTab === "buy" ? token.ticker : "USDC"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Error alerts or transaction notifications */}
-            {trade.status.status === "error" && (
-              <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-[11px] text-destructive leading-relaxed flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>{trade.status.message}</span>
-              </div>
-            )}
-            {trade.status.status === "success" && (
-              <a
-                href={`https://testnet.arcscan.app/tx/${trade.status.txHash}`}
-                target="_blank"
-                rel="noreferrer"
-                className="block rounded-lg border border-primary/20 bg-primary/5 p-3 text-[11px] text-primary hover:underline font-semibold leading-relaxed"
-              >
-                Swap confirmed. Click to view Txn on ArcScan.
-              </a>
-            )}
-
-            {/* Action buttons */}
-            {state.status !== "connected" ? (
-              <div className="text-center text-[10px] text-muted-foreground font-semibold py-2.5 border border-border/50 rounded-lg bg-secondary/20 uppercase tracking-wider">
-                Connect Wallet to Trade
-              </div>
-            ) : !state.isArcTestnet ? (
-              <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
-                Switch network to execute trades
-              </div>
-            ) : !market.isTradeable ? (
-              <div className="text-center text-[10px] text-yellow-400 font-semibold py-2.5 border border-yellow-500/30 rounded-lg bg-yellow-500/10 uppercase tracking-wider">
-                Liquidity pool required before swapping
-              </div>
-            ) : (
-              <Button
-                className={`w-full font-extrabold uppercase tracking-widest h-12 text-black ${
-                  tradeTab === "buy" 
-                    ? "bg-primary hover:bg-primary/90" 
-                    : "bg-destructive hover:bg-destructive/90 text-white"
-                }`}
-                size="lg"
-                disabled={!canTrade}
-                onClick={handleTrade}
-              >
-                {isTradingPending ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Executing...
-                  </span>
-                ) : (
-                  `${tradeTab === "buy" ? "Buy" : "Sell"} ${token.ticker}`
-                )}
-              </Button>
-            )}
-
+          <CardContent className="pt-4">
+            {renderTradeTerminal()}
           </CardContent>
         </Card>
 
@@ -1513,6 +1693,43 @@ export function TokenDetailPage() {
         </Card>
 
       </div>
+
+      {/* Sticky mobile action bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-background/80 backdrop-blur-md border-t border-border/80 p-3 flex gap-3 lg:hidden">
+        <Button
+          onClick={() => {
+            setTradeTab("buy");
+            setIsMobileTradeOpen(true);
+          }}
+          className="flex-1 bg-primary hover:bg-primary/90 text-black font-extrabold uppercase tracking-widest h-12"
+        >
+          Buy
+        </Button>
+        <Button
+          onClick={() => {
+            setTradeTab("sell");
+            setIsMobileTradeOpen(true);
+          }}
+          className="flex-1 bg-destructive hover:bg-destructive/90 text-white font-extrabold uppercase tracking-widest h-12"
+        >
+          Sell
+        </Button>
+      </div>
+
+      {/* Slide-up overlay containing trade terminal */}
+      <Sheet open={isMobileTradeOpen} onOpenChange={setIsMobileTradeOpen}>
+        <SheetContent side="bottom" className="h-[85vh] bg-background border-t border-border overflow-y-auto px-4 pb-10 z-[100]">
+          <SheetHeader className="text-left pb-4 border-b border-border/40 font-mono">
+            <SheetTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-primary" />
+              Quick Swap: {token.ticker}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="pt-4 max-w-md mx-auto">
+            {renderTradeTerminal()}
+          </div>
+        </SheetContent>
+      </Sheet>
 
     </div>
   );

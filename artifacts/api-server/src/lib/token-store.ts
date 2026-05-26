@@ -311,7 +311,7 @@ const dbPath = process.env.TOKEN_DB_PATH ?? defaultDbPath;
 
 mkdirSync(path.dirname(dbPath), { recursive: true });
 
-const db = new DatabaseSync(dbPath);
+export const db = new DatabaseSync(dbPath);
 
 const createTokensTableSql = `
   CREATE TABLE IF NOT EXISTS tokens (
@@ -412,6 +412,28 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS trades_tokenId_blockNumber_idx ON trades(tokenId, blockNumber DESC);
   CREATE INDEX IF NOT EXISTS trades_pairAddress_idx ON trades(pairAddress);
+
+  CREATE TABLE IF NOT EXISTS comments (
+    id TEXT PRIMARY KEY,
+    tokenId TEXT NOT NULL,
+    authorAddress TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    parentId TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS reactions (
+    id TEXT PRIMARY KEY,
+    tokenId TEXT NOT NULL,
+    commentId TEXT,
+    userAddress TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    UNIQUE(tokenId, commentId, userAddress, emoji)
+  );
+
+  CREATE INDEX IF NOT EXISTS comments_tokenId_idx ON comments(tokenId);
+  CREATE INDEX IF NOT EXISTS reactions_tokenId_commentId_idx ON reactions(tokenId, commentId);
 `);
 
 const tokenColumns = `
@@ -419,7 +441,7 @@ const tokenColumns = `
   createdAt, creatorAddress, logoColor, logoUrl, contractAddress, marketType,
   pairAddress, routerAddress, totalSupply, holders, txCount, website, twitter, telegram
 `;
-const launchedTokenWhere = "contractAddress IS NOT NULL AND contractAddress != ''";
+const launchedTokenWhere = "contractAddress IS NOT NULL AND contractAddress != '' AND pairAddress IS NOT NULL AND pairAddress != ''";
 
 const countStatement = db.prepare("SELECT COUNT(*) AS count FROM tokens");
 const insertStatement = db.prepare(`
@@ -820,4 +842,142 @@ export function updateTokenMarket(
 
 export function getTokenDbPath() {
   return dbPath;
+}
+
+export type Comment = {
+  id: string;
+  tokenId: string;
+  authorAddress: string;
+  content: string;
+  timestamp: string;
+  parentId: string | null;
+};
+
+export type Reaction = {
+  id: string;
+  tokenId: string;
+  commentId: string | null;
+  userAddress: string;
+  emoji: string;
+  timestamp: string;
+};
+
+// Statements for Comments and Reactions
+const insertCommentStatement = db.prepare(`
+  INSERT INTO comments (id, tokenId, authorAddress, content, timestamp, parentId)
+  VALUES ($id, $tokenId, $authorAddress, $content, $timestamp, $parentId)
+`);
+
+const selectCommentsStatement = db.prepare(`
+  SELECT * FROM comments WHERE tokenId = ? ORDER BY datetime(timestamp) ASC
+`);
+
+const toggleReactionStatement = db.prepare(`
+  INSERT INTO reactions (id, tokenId, commentId, userAddress, emoji, timestamp)
+  VALUES ($id, $tokenId, $commentId, $userAddress, $emoji, $timestamp)
+`);
+
+const deleteReactionStatement = db.prepare(`
+  DELETE FROM reactions 
+  WHERE tokenId = $tokenId 
+    AND (commentId = $commentId OR (commentId IS NULL AND $commentId IS NULL))
+    AND userAddress = $userAddress 
+    AND emoji = $emoji
+`);
+
+const selectReactionsStatement = db.prepare(`
+  SELECT * FROM reactions WHERE tokenId = ?
+`);
+
+const selectRecentCommentsStatement = db.prepare(`
+  SELECT c.*, t.ticker as tokenTicker 
+  FROM comments c
+  JOIN tokens t ON c.tokenId = t.id
+  ORDER BY datetime(c.timestamp) DESC
+  LIMIT ?
+`);
+
+export function getCommentsForToken(tokenId: string): Comment[] {
+  const rows = selectCommentsStatement.all(tokenId) as Record<string, unknown>[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    tokenId: String(row.tokenId),
+    authorAddress: String(row.authorAddress),
+    content: String(row.content),
+    timestamp: String(row.timestamp),
+    parentId: row.parentId ? String(row.parentId) : null,
+  }));
+}
+
+export function saveComment(comment: Omit<Comment, "id" | "timestamp">): Comment {
+  const newComment: Comment = {
+    ...comment,
+    id: "c-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now(),
+    timestamp: new Date().toISOString(),
+  };
+
+  insertCommentStatement.run({
+    $id: newComment.id,
+    $tokenId: newComment.tokenId,
+    $authorAddress: newComment.authorAddress,
+    $content: newComment.content,
+    $timestamp: newComment.timestamp,
+    $parentId: newComment.parentId,
+  });
+
+  return newComment;
+}
+
+export function toggleEmojiReaction(
+  reaction: Omit<Reaction, "id" | "timestamp">
+): { added: boolean } {
+  // Try deleting first (to toggle off)
+  const deleteResult = deleteReactionStatement.run({
+    $tokenId: reaction.tokenId,
+    $commentId: reaction.commentId,
+    $userAddress: reaction.userAddress,
+    $emoji: reaction.emoji,
+  });
+
+  if (deleteResult.changes > 0) {
+    return { added: false };
+  }
+
+  // Otherwise, add it
+  const newId = "r-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now();
+  toggleReactionStatement.run({
+    $id: newId,
+    $tokenId: reaction.tokenId,
+    $commentId: reaction.commentId,
+    $userAddress: reaction.userAddress,
+    $emoji: reaction.emoji,
+    $timestamp: new Date().toISOString(),
+  });
+
+  return { added: true };
+}
+
+export function getReactionsForToken(tokenId: string): Reaction[] {
+  const rows = selectReactionsStatement.all(tokenId) as Record<string, unknown>[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    tokenId: String(row.tokenId),
+    commentId: row.commentId ? String(row.commentId) : null,
+    userAddress: String(row.userAddress),
+    emoji: String(row.emoji),
+    timestamp: String(row.timestamp),
+  }));
+}
+
+export function getRecentComments(limit = 10): (Comment & { tokenTicker: string })[] {
+  const rows = selectRecentCommentsStatement.all(limit) as Record<string, unknown>[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    tokenId: String(row.tokenId),
+    authorAddress: String(row.authorAddress),
+    content: String(row.content),
+    timestamp: String(row.timestamp),
+    parentId: row.parentId ? String(row.parentId) : null,
+    tokenTicker: String(row.tokenTicker),
+  }));
 }
