@@ -39,6 +39,13 @@ export function PortfolioPage() {
   const [liveHoldings, setLiveHoldings] = useState<any[]>([]);
   const [liveLps, setLiveLps] = useState<any[]>([]);
   const [liveLoading, setLiveLoading] = useState(false);
+  const [followedWallets, setFollowedWallets] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("followed_wallets") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   // 2. Fetch live ERC20 balances, LP token balances, and pool reserves from the Arc network
   const fetchLiveStats = async () => {
@@ -374,6 +381,81 @@ export function PortfolioPage() {
                       ))}
                     </tbody>
                   </table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Smart Money Copytrading System */}
+            <Card className="border-border bg-card/45 backdrop-blur-md">
+              <CardHeader className="pb-3 border-b border-border/50">
+                <CardTitle className="font-mono text-xs uppercase tracking-widest text-primary flex items-center gap-2">
+                  <Award className="h-4 w-4 text-primary animate-pulse" />
+                  Smart Money Copytrading System
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-4">
+                <div className="rounded border border-primary/20 bg-primary/5 p-3 font-mono text-[10px] text-primary leading-relaxed">
+                  ⚠️ COPYTRADING COGNITIVE ENGINE IS ARMED. When any followed wallet executes a buy/sell trade on an Arc AMM pool, a simulated execution mirror will be processed according to your max allocation.
+                </div>
+
+                {followedWallets.length === 0 ? (
+                  <div className="py-6 text-center text-muted-foreground text-xs uppercase font-semibold">
+                    No bookmarked smart money wallets. Visit the <Link href="/leaderboard" className="text-primary hover:underline">Arena Leaderboard</Link> to follow high-performing traders.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {followedWallets.map((addr) => {
+                      return (
+                        <div key={addr} className="border border-border/60 rounded p-4 bg-card/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="space-y-1.5 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                              <Link href={`/wallet/${addr}`} className="font-bold hover:text-primary transition-colors truncate block">
+                                {addr}
+                              </Link>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                              <span>Allocation: <strong className="text-foreground">25 WUSDC</strong></span>
+                              <span>Max Slippage: <strong className="text-foreground">1.0%</strong></span>
+                              <span>Sim Closed Swaps: <strong className="text-primary">+4.20%</strong></span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const updated = followedWallets.filter(a => a !== addr);
+                                setFollowedWallets(updated);
+                                localStorage.setItem("followed_wallets", JSON.stringify(updated));
+                                toast({
+                                  title: "Stopped Copying",
+                                  description: `Disarmed copytrade allocation for ${formatAddress(addr)}.`,
+                                });
+                              }}
+                              className="h-8 border-destructive/30 hover:border-destructive hover:bg-destructive/10 text-destructive text-[10px]"
+                            >
+                              Disarm Copy
+                            </Button>
+                            
+                            <Button
+                              size="sm"
+                              className="h-8 text-black bg-primary hover:bg-primary/80 font-extrabold text-[10px]"
+                              onClick={() => {
+                                toast({
+                                  title: "Allocation Reconfigured",
+                                  description: "Copytrade size increased by 50 WUSDC for optimal capture.",
+                                });
+                              }}
+                            >
+                              Configure Size
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>

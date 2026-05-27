@@ -5,7 +5,6 @@
  * ArcMeme.fun API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { TokenInputChain } from "./tokenInputChain";
 
 export interface TokenInput {
   /**
@@ -27,5 +26,4 @@ export interface TokenInput {
   totalSupply?: number;
   contractAddress?: string;
   creatorAddress?: string;
-  chain?: TokenInputChain;
 }

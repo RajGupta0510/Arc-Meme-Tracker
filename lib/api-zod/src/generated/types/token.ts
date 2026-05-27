@@ -5,7 +5,6 @@
  * ArcMeme.fun API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { TokenChain } from "./tokenChain";
 import type { TokenMarketType } from "./tokenMarketType";
 
 export interface Token {
@@ -38,5 +37,10 @@ export interface Token {
   twitter?: string | null;
   /** @nullable */
   telegram?: string | null;
-  chain: TokenChain;
+  momentumScore?: number;
+  trustScore?: number;
+  creatorHoldingPercent?: number;
+  riskFlags?: string;
+  signals?: string;
+  hypeScore?: number;
 }

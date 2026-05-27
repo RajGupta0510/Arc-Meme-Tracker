@@ -14,6 +14,7 @@ import { ImportTokenModal } from "@/components/import-token-modal";
 import { formatAddress, formatCompactNumber } from "@/lib/utils";
 import { Grid3X3, Search, SlidersHorizontal, Star, Table2, Flame, Award, Clock, Users, ArrowUpRight, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 type ViewMode = "grid" | "table";
 type MarketFilter = "all" | "live" | "needs-pool" | "watchlist";
@@ -93,65 +94,95 @@ function MiniSparkline({ token, accentColor }: { token: Token; accentColor: stri
   );
 }
 
-function TerminalActivityFeed({ tokens }: { tokens: Token[] }) {
-  const activities = useMemo(() => {
-    return [...tokens]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 8)
-      .map((token, i) => {
-        const timeOffset = `${i * 3 + 1}m ago`;
-        const color = token.logoColor || "#22c55e";
-        if (token.marketType === "amm_pool" && token.pairAddress) {
-          return {
-            id: token.id,
-            ticker: token.ticker,
-            color,
-            text: `Indexed ${token.txCount} swaps on AMM pool`,
-            badge: "SWAP",
-            time: timeOffset,
-            isPool: true,
-          };
-        }
-        return {
-          id: token.id,
-          ticker: token.ticker,
-          color,
-          text: `Deployed on-chain by creator`,
-          badge: "LAUNCH",
-          time: timeOffset,
-          isPool: false,
-        };
-      });
-  }, [tokens]);
+function TerminalActivityFeed() {
+  const { data: signals = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/intelligence/signals"],
+    queryFn: async () => {
+      const res = await fetch("/api/intelligence/signals");
+      if (!res.ok) throw new Error("Failed to fetch signals");
+      return res.json();
+    },
+    refetchInterval: 5000,
+  });
 
   return (
     <div className="glass-panel p-4 flex flex-col gap-3 font-mono h-full border border-border/80 bg-card/45 backdrop-blur-md">
       <div className="flex items-center justify-between border-b border-border/40 pb-2">
         <div className="flex items-center gap-2 text-xs uppercase font-bold text-primary">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary terminal-pulse" />
-          Terminal Stream
+          <span className="h-1.5 w-1.5 rounded-full bg-primary terminal-pulse animate-ping" />
+          Arc Intelligence Feed
         </div>
-        <span className="text-[10px] text-muted-foreground uppercase">Live Activity</span>
+        <span className="text-[9px] text-muted-foreground uppercase tracking-widest animate-pulse">Telemetry Live</span>
       </div>
-      <div className="space-y-3.5 overflow-y-auto max-h-[460px] hide-scrollbar text-xs">
-        {activities.length === 0 ? (
-          <div className="text-[10px] text-muted-foreground text-center py-4">No active stream logs</div>
+      <div className="space-y-3 overflow-y-auto max-h-[500px] pr-1 text-xs">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-10 gap-2">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Syncing Feed...</span>
+          </div>
+        ) : signals.length === 0 ? (
+          <div className="text-[10px] text-muted-foreground text-center py-6">No signals reported. Play some trades to trigger alerts!</div>
         ) : (
-          activities.map((act, index) => (
-            <Link href={`/token/${act.id}`} key={index} className="block border-l-2 border-border/50 pl-3 py-0.5 hover:border-primary transition-colors cursor-pointer group">
-              <div className="flex items-center justify-between text-[9px] text-muted-foreground mb-0.5">
-                <span className={`px-1 rounded-[2px] text-[8px] font-bold tracking-wider ${act.isPool ? "bg-primary/10 text-primary border border-primary/20" : "bg-yellow-400/10 text-yellow-400 border border-yellow-400/20"}`}>
-                  {act.badge}
-                </span>
-                <span>{act.time}</span>
-              </div>
-              <div className="text-foreground/90 group-hover:text-foreground transition-colors leading-relaxed">
-                <span className="font-bold mr-1 font-mono" style={{ color: act.color }}>${act.ticker}</span>
-                <span className="text-muted-foreground text-[10px]">{act.text}</span>
-              </div>
-            </Link>
-          ))
+          signals.map((sig) => {
+            const isCritical = sig.severity === "critical";
+            const isWarning = sig.severity === "warning";
+            const typeColor = isCritical 
+              ? "border-destructive/50 bg-destructive/10 text-destructive"
+              : isWarning
+              ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
+              : "border-primary/30 bg-primary/10 text-primary";
+
+            const sideGlow = isCritical 
+              ? "border-l-destructive shadow-[inset_4px_0_12px_rgba(239,68,68,0.06)]"
+              : isWarning
+              ? "border-l-yellow-500 shadow-[inset_4px_0_12px_rgba(234,179,8,0.06)]"
+              : "border-l-primary shadow-[inset_4px_0_12px_rgba(34,197,94,0.06)]";
+
+            return (
+              <Link 
+                href={`/token/${sig.tokenId}`} 
+                key={sig.id} 
+                className={`block border-l-2 pl-3 py-2 pr-2 rounded-r bg-card/10 hover:bg-card/45 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 cursor-pointer group ${sideGlow}`}
+              >
+                <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
+                  <span className={`px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border ${typeColor}`}>
+                    {sig.title}
+                  </span>
+                  <span>{new Date(sig.timestamp).toLocaleTimeString()}</span>
+                </div>
+                <div className="text-foreground/90 group-hover:text-foreground font-mono text-[10px] leading-relaxed transition-colors">
+                  {sig.message}
+                </div>
+                <div className="mt-1 flex items-center justify-between text-[8px] text-muted-foreground">
+                  <span className="text-primary font-bold group-hover:underline">Trade Ticker ${sig.ticker}</span>
+                  <span className="flex items-center gap-1">
+                    <span className={`w-1 h-1 rounded-full ${isCritical ? "bg-destructive animate-ping" : isWarning ? "bg-yellow-400" : "bg-primary animate-pulse"}`} />
+                    Active Signal
+                  </span>
+                </div>
+              </Link>
+            );
+          })
         )}
+      </div>
+      
+      <div className="mt-4 pt-3 border-t border-border/40">
+        <div className="mb-2 text-[9px] uppercase tracking-widest text-muted-foreground flex items-center justify-between">
+          <span>Smart Money Arena</span>
+          <Link href="/leaderboard" className="text-primary hover:underline flex items-center gap-0.5">
+            Leaderboard <ArrowUpRight className="w-2.5 h-2.5" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-[10px]">
+          <div className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
+            <span className="text-muted-foreground text-[8px] uppercase">Top Smart Money</span>
+            <span className="font-extrabold text-primary truncate mt-1">0x1a2e3f4...e0f</span>
+          </div>
+          <div className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
+            <span className="text-muted-foreground text-[8px] uppercase">Active Degens</span>
+            <span className="font-extrabold text-foreground truncate mt-1">10+ tracked</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -623,7 +654,7 @@ export function HomePage() {
 
           {/* Right Column: Live Swap logs (Only desktop view) */}
           <aside className="hidden lg:block w-full">
-            <TerminalActivityFeed tokens={tokens} />
+            <TerminalActivityFeed />
           </aside>
         </div>
       </div>

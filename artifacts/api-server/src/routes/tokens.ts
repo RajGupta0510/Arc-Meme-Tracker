@@ -21,6 +21,9 @@ import {
   toggleEmojiReaction,
   getReactionsForToken,
   getRecentComments,
+  getLeaderboard,
+  getWalletAnalytics,
+  incrementHype,
 } from "../lib/token-store";
 import { logger } from "../lib/logger";
 import { indexTokenSwapEvents } from "../lib/swap-indexer";
@@ -590,6 +593,112 @@ router.get("/community/activity", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err }, "GET /api/community/activity failed");
     res.status(500).json({ error: "Failed to load community activity." });
+  }
+});
+
+router.get("/intelligence/signals", async (req, res): Promise<void> => {
+  try {
+    const tokens = getTokens();
+    const signals: any[] = [];
+
+    // 1. Check for token risk flags / low trust / high creator holding
+    for (const tok of tokens) {
+      if (tok.trustScore !== undefined && tok.trustScore < 30) {
+        signals.push({
+          id: `rug-${tok.id}-${Date.now()}`,
+          type: "rug_risk",
+          severity: "critical",
+          title: "⚠️ SEC RISK CRITICAL",
+          message: `${tok.ticker} trust rating is low (${tok.trustScore}/99). Creator holding concentration is ${tok.creatorHoldingPercent}%.`,
+          timestamp: tok.createdAt,
+          tokenId: tok.id,
+          ticker: tok.ticker,
+        });
+      }
+      if (tok.momentumScore !== undefined && tok.momentumScore > 75) {
+        signals.push({
+          id: `momentum-${tok.id}-${Date.now()}`,
+          type: "momentum_surge",
+          severity: "warning",
+          title: "🔥 MOMENTUM SURGE",
+          message: `${tok.ticker} is trading with high momentum (${tok.momentumScore}/99) and ${tok.change24h}% change.`,
+          timestamp: new Date().toISOString(),
+          tokenId: tok.id,
+          ticker: tok.ticker,
+        });
+      }
+    }
+
+    // 2. Query recent trades for whale trades
+    const trades = db.prepare(`
+      SELECT t.*, tok.ticker, tok.logoColor
+      FROM trades t
+      JOIN tokens tok ON t.tokenId = tok.id
+      ORDER BY datetime(t.timestamp) DESC
+      LIMIT 30
+    `).all() as any[];
+
+    for (const t of trades) {
+      const amountUsdc = Number(t.wusdcAmount);
+      if (amountUsdc >= 25) {
+        const sideEmoji = t.side === "buy" ? "🟢" : "🔴";
+        signals.push({
+          id: `whale-${t.id}-${t.timestamp}`,
+          type: t.side === "buy" ? "whale_buy" : "whale_sell",
+          severity: "info",
+          title: `${sideEmoji} WHALE SWAP`,
+          message: `${t.traderAddress.slice(0, 6)}...${t.traderAddress.slice(-4)} swapped ${Number(t.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 0 })} $${t.ticker} for ${amountUsdc.toFixed(2)} WUSDC.`,
+          timestamp: t.timestamp,
+          tokenId: t.tokenId,
+          ticker: t.ticker,
+        });
+      }
+    }
+
+    // Sort signals by timestamp descending
+    signals.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    res.json(signals.slice(0, 40));
+  } catch (err) {
+    logger.error({ err }, "GET /api/intelligence/signals failed");
+    res.status(200).json([]);
+  }
+});
+
+router.get("/leaderboard", async (req, res): Promise<void> => {
+  try {
+    const leaderboard = getLeaderboard();
+    res.json(leaderboard);
+  } catch (err) {
+    logger.error({ err }, "GET /api/leaderboard failed");
+    res.status(500).json({ error: "Failed to load leaderboard." });
+  }
+});
+
+router.get("/wallet/:address", async (req, res): Promise<void> => {
+  try {
+    const address = req.params.address;
+    if (!address) {
+      res.status(400).json({ error: "Wallet address is required." });
+      return;
+    }
+    const analytics = getWalletAnalytics(address);
+    res.json(analytics);
+  } catch (err) {
+    logger.error({ err, address: req.params.address }, "GET /api/wallet/:address failed");
+    res.status(500).json({ error: "Failed to load wallet analytics." });
+  }
+});
+
+router.post("/tokens/:id/hype", async (req, res): Promise<void> => {
+  try {
+    const id = req.params.id;
+    const points = typeof req.body.points === "number" ? req.body.points : 1;
+    const newHype = incrementHype(id, points);
+    res.json({ success: true, hypeScore: newHype });
+  } catch (err) {
+    logger.error({ err, id: req.params.id }, "POST /api/tokens/:id/hype failed");
+    res.status(500).json({ error: "Failed to increment hype." });
   }
 });
 

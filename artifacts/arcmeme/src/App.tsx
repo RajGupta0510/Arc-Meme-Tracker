@@ -9,6 +9,8 @@ import { HomePage } from "@/pages/home";
 import { TokenDetailPage } from "@/pages/token-detail";
 import { LaunchPage } from "@/pages/launch";
 import { PortfolioPage } from "@/pages/portfolio";
+import { LeaderboardPage } from "@/pages/leaderboard";
+import { WalletDetailPage } from "@/pages/wallet-detail";
 import { useEffect } from "react";
 
 const queryClient = new QueryClient();
@@ -20,6 +22,8 @@ function Router() {
       <Route path="/token/:id" component={TokenDetailPage} />
       <Route path="/launch" component={LaunchPage} />
       <Route path="/portfolio" component={PortfolioPage} />
+      <Route path="/leaderboard" component={LeaderboardPage} />
+      <Route path="/wallet/:address" component={WalletDetailPage} />
       <Route component={NotFound} />
     </Switch>
   );

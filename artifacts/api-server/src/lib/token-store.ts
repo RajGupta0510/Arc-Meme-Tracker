@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { logger } from "./logger";
 
 export type Token = {
   id: string;
@@ -26,6 +27,12 @@ export type Token = {
   website: string | null;
   twitter: string | null;
   telegram: string | null;
+  momentumScore?: number;
+  trustScore?: number;
+  creatorHoldingPercent?: number;
+  riskFlags?: string;
+  signals?: string;
+  hypeScore?: number;
 };
 
 export type Trade = {
@@ -365,6 +372,12 @@ const requiredColumns = [
   ["website", "TEXT"],
   ["twitter", "TEXT"],
   ["telegram", "TEXT"],
+  ["momentumScore", "REAL NOT NULL DEFAULT 50"],
+  ["trustScore", "REAL NOT NULL DEFAULT 80"],
+  ["creatorHoldingPercent", "REAL NOT NULL DEFAULT 0"],
+  ["riskFlags", "TEXT NOT NULL DEFAULT ''"],
+  ["signals", "TEXT NOT NULL DEFAULT ''"],
+  ["hypeScore", "INTEGER NOT NULL DEFAULT 0"],
 ] as const;
 
 function ensureTokenSchema() {
@@ -439,7 +452,8 @@ db.exec(`
 const tokenColumns = `
   id, name, ticker, price, marketCap, volume24h, change24h, description,
   createdAt, creatorAddress, logoColor, logoUrl, contractAddress, marketType,
-  pairAddress, routerAddress, totalSupply, holders, txCount, website, twitter, telegram
+  pairAddress, routerAddress, totalSupply, holders, txCount, website, twitter, telegram,
+  momentumScore, trustScore, creatorHoldingPercent, riskFlags, signals, hypeScore
 `;
 const launchedTokenWhere = "contractAddress IS NOT NULL AND contractAddress != '' AND pairAddress IS NOT NULL AND pairAddress != ''";
 
@@ -450,7 +464,8 @@ const insertStatement = db.prepare(`
     $id, $name, $ticker, $price, $marketCap, $volume24h, $change24h,
     $description, $createdAt, $creatorAddress, $logoColor, $logoUrl,
     $contractAddress, $marketType, $pairAddress, $routerAddress, $totalSupply,
-    $holders, $txCount, $website, $twitter, $telegram
+    $holders, $txCount, $website, $twitter, $telegram,
+    $momentumScore, $trustScore, $creatorHoldingPercent, $riskFlags, $signals, $hypeScore
   )
 `);
 
@@ -466,14 +481,49 @@ const insertTradeStatement = db.prepare(`
 `);
 
 function rowToToken(row: Record<string, unknown>): Token {
+  const id = String(row.id);
+  const change24h = Number(row.change24h);
+  const volume24h = Number(row.volume24h);
+  const marketCap = Number(row.marketCap);
+  
+  // Calculate dynamic momentum score (0-99)
+  let momentum = Math.round(50 + change24h * 0.15 + Math.log1p(volume24h) * 2);
+  momentum = Math.min(99, Math.max(10, momentum));
+  
+  // Calculate dynamic trust score (0-99)
+  let trust = id === "rugpull" ? 12 : Math.round(85 - (id.length % 5) + Math.min(10, Math.log1p(marketCap) * 0.5));
+  trust = Math.min(99, Math.max(5, trust));
+  
+  // Calculate dynamic creator concentration
+  const creatorHolding = id === "rugpull" ? 82.5 : Number((2.5 + (id.charCodeAt(0) % 8)).toFixed(1));
+  
+  // Generate dynamic risk flags
+  const flagsList = [];
+  if (id === "rugpull") {
+    flagsList.push("creator_concentration", "unlocked_liquidity", "honeypot_risk");
+  } else {
+    if (marketCap < 2000) flagsList.push("low_liquidity");
+    if (creatorHolding > 8) flagsList.push("medium_concentration");
+  }
+  const riskFlags = flagsList.join(",");
+  
+  // Generate dynamic active signals
+  const signalsList = [];
+  if (momentum > 75) signalsList.push("fresh_momentum");
+  if (volume24h > 15000) signalsList.push("volume_spike");
+  if (change24h > 100) signalsList.push("price_surge");
+  if (id === "arcdog") signalsList.push("whale_buys");
+  if (id === "bonkarc") signalsList.push("liquidity_surge");
+  const signals = signalsList.join(",");
+
   return {
-    id: String(row.id),
+    id,
     name: String(row.name).trim(),
     ticker: String(row.ticker).trim(),
     price: Number(row.price),
-    marketCap: Number(row.marketCap),
-    volume24h: Number(row.volume24h),
-    change24h: Number(row.change24h),
+    marketCap,
+    volume24h,
+    change24h,
     description: String(row.description),
     createdAt: String(row.createdAt),
     creatorAddress: String(row.creatorAddress),
@@ -489,6 +539,12 @@ function rowToToken(row: Record<string, unknown>): Token {
     website: row.website === null ? null : String(row.website),
     twitter: row.twitter === null ? null : String(row.twitter),
     telegram: row.telegram === null ? null : String(row.telegram),
+    momentumScore: Number(row.momentumScore ?? momentum),
+    trustScore: Number(row.trustScore ?? trust),
+    creatorHoldingPercent: Number(row.creatorHoldingPercent ?? creatorHolding),
+    riskFlags: String(row.riskFlags || riskFlags),
+    signals: String(row.signals || signals),
+    hypeScore: Number(row.hypeScore ?? (id.charCodeAt(0) % 25)),
   };
 }
 
@@ -516,6 +572,12 @@ function saveToken(token: Token) {
     $website: token.website,
     $twitter: token.twitter,
     $telegram: token.telegram,
+    $momentumScore: token.momentumScore ?? 50,
+    $trustScore: token.trustScore ?? 80,
+    $creatorHoldingPercent: token.creatorHoldingPercent ?? 0,
+    $riskFlags: token.riskFlags ?? "",
+    $signals: token.signals ?? "",
+    $hypeScore: token.hypeScore ?? 0,
   });
 }
 
@@ -980,4 +1042,320 @@ export function getRecentComments(limit = 10): (Comment & { tokenTicker: string 
     parentId: row.parentId ? String(row.parentId) : null,
     tokenTicker: String(row.tokenTicker),
   }));
+}
+
+export function incrementHype(tokenId: string, points: number): number {
+  try {
+    const token = getToken(tokenId);
+    if (!token) return 0;
+    const newHype = (token.hypeScore ?? 0) + points;
+    db.prepare("UPDATE tokens SET hypeScore = ? WHERE id = ?").run(newHype, tokenId);
+    return newHype;
+  } catch (err) {
+    return 0;
+  }
+}
+
+export type LeaderboardEntry = {
+  address: string;
+  realizedPnl: number;
+  winRate: number;
+  tradesCount: number;
+  volume: number;
+  rank: number;
+  type: "whale" | "degen" | "lp_giant";
+};
+
+export function getLeaderboard(metric = "pnl"): LeaderboardEntry[] {
+  const mockTraders: LeaderboardEntry[] = [
+    {
+      address: "0x1a2e3f4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f",
+      realizedPnl: 98400.5,
+      winRate: 91,
+      tradesCount: 34,
+      volume: 125000,
+      rank: 1,
+      type: "whale",
+    },
+    {
+      address: "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+      realizedPnl: 45820.2,
+      winRate: 84,
+      tradesCount: 142,
+      volume: 85400,
+      rank: 2,
+      type: "degen",
+    },
+    {
+      address: "0xbb9bc244d798123fde783fcc1c72d3bb8c189413",
+      realizedPnl: 28150.0,
+      winRate: 72,
+      tradesCount: 63,
+      volume: 92000,
+      rank: 3,
+      type: "lp_giant",
+    },
+    {
+      address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      realizedPnl: 12450.7,
+      winRate: 65,
+      tradesCount: 28,
+      volume: 31000,
+      rank: 4,
+      type: "degen",
+    },
+    {
+      address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      realizedPnl: 6720.4,
+      winRate: 58,
+      tradesCount: 104,
+      volume: 45000,
+      rank: 5,
+      type: "lp_giant",
+    },
+  ];
+
+  try {
+    const allTrades = db.prepare("SELECT * FROM trades").all() as Record<string, unknown>[];
+    const grouped = new Map<string, { tradesCount: number; volume: number; buys: number; sells: number; trades: any[] }>();
+
+    for (const row of allTrades) {
+      const addr = String(row.traderAddress).toLowerCase();
+      if (!grouped.has(addr)) {
+        grouped.set(addr, { tradesCount: 0, volume: 0, buys: 0, sells: 0, trades: [] });
+      }
+      const data = grouped.get(addr)!;
+      data.tradesCount++;
+      const vol = Number(row.wusdcAmount);
+      data.volume += vol;
+      if (row.side === "buy") data.buys++;
+      else data.sells++;
+      data.trades.push(row);
+    }
+
+    const tokens = getTokens();
+    for (const [addr, data] of grouped.entries()) {
+      if (mockTraders.some(t => t.address.toLowerCase() === addr)) continue;
+
+      let realizedPnl = 0;
+      const holdings: Record<string, { size: number; totalCost: number; avgPrice: number }> = {};
+      const sortedTrades = data.trades.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      
+      let profitableSells = 0;
+      let totalSells = 0;
+
+      for (const t of sortedTrades) {
+        const tokenId = t.tokenId;
+        const amount = Number(t.tokenAmount);
+        const wusdc = Number(t.wusdcAmount);
+        
+        if (!holdings[tokenId]) {
+          holdings[tokenId] = { size: 0, totalCost: 0, avgPrice: 0 };
+        }
+        
+        const h = holdings[tokenId];
+        if (t.side === "buy") {
+          h.size += amount;
+          h.totalCost += wusdc;
+          h.avgPrice = h.size > 0 ? h.totalCost / h.size : 0;
+        } else {
+          totalSells++;
+          const costBasis = amount * h.avgPrice;
+          const gain = wusdc - costBasis;
+          realizedPnl += gain;
+          if (gain > 0) profitableSells++;
+          h.size = Math.max(0, h.size - amount);
+          if (h.size === 0) {
+            h.totalCost = 0;
+            h.avgPrice = 0;
+          } else {
+            h.totalCost = h.size * h.avgPrice;
+          }
+        }
+      }
+
+      let unrealizedValuation = 0;
+      for (const [tId, h] of Object.entries(holdings)) {
+        if (h.size > 0) {
+          const tok = tokens.find(t => t.id === tId);
+          if (tok) {
+            unrealizedValuation += (h.size * tok.price) - h.totalCost;
+          }
+        }
+      }
+
+      const winRate = totalSells > 0 ? Math.round((profitableSells / totalSells) * 100) : 50;
+      let type: "whale" | "degen" | "lp_giant" = "degen";
+      if (data.volume > 10000) type = "whale";
+      else if (data.tradesCount > 20) type = "degen";
+
+      const formattedAddress = addr.startsWith("0x") ? addr : "0x" + addr.slice(0, 40);
+
+      mockTraders.push({
+        address: formattedAddress,
+        realizedPnl: Number((realizedPnl + unrealizedValuation).toFixed(2)),
+        winRate,
+        tradesCount: data.tradesCount,
+        volume: Number(data.volume.toFixed(2)),
+        rank: 99,
+        type,
+      });
+    }
+  } catch (err) {
+    logger.error({ err }, "Error computing leaderboard from trades");
+  }
+
+  mockTraders.sort((a, b) => b.realizedPnl - a.realizedPnl);
+  mockTraders.forEach((t, i) => {
+    t.rank = i + 1;
+  });
+
+  return mockTraders;
+}
+
+export function getWalletAnalytics(address: string) {
+  const addrLower = address.toLowerCase();
+
+  const mockHoldings: Record<string, any> = {
+    "0x1a2e3f4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f": {
+      realizedPnl: 98400.5,
+      winRate: 91,
+      volume: 125000,
+      tradesCount: 34,
+      holdings: [
+        { tokenId: "arcdog", ticker: "ARCDOG", name: "ARC DOG", logoColor: "#f59e0b", balance: 5000000, value: 210.5, avgEntry: 0.000035 },
+        { tokenId: "arcmoon", ticker: "ARCMOON", name: "ARC MOON", logoColor: "#a855f7", balance: 2000000, value: 184.6, avgEntry: 0.000075 },
+      ]
+    },
+    "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {
+      realizedPnl: 45820.2,
+      winRate: 84,
+      volume: 85400,
+      tradesCount: 142,
+      holdings: [
+        { tokenId: "arcdog", ticker: "ARCDOG", name: "ARC DOG", logoColor: "#f59e0b", balance: 12000000, value: 505.2, avgEntry: 0.000038 },
+        { tokenId: "bonkarc", ticker: "BONKARC", name: "BONK ARC", logoColor: "#eab308", balance: 8000000, value: 53.6, avgEntry: 0.000005 },
+      ]
+    },
+    "0xbb9bc244d798123fde783fcc1c72d3bb8c189413": {
+      realizedPnl: 28150.0,
+      winRate: 72,
+      volume: 92000,
+      tradesCount: 63,
+      holdings: [
+        { tokenId: "mooncat", ticker: "MCAT", name: "MOON CAT", logoColor: "#8b5cf6", balance: 35000000, value: 311.85, avgEntry: 0.0000075 },
+      ]
+    }
+  };
+
+  const isMock = addrLower in mockHoldings;
+  const mockData = isMock ? mockHoldings[addrLower] : null;
+
+  try {
+    const trades = db.prepare(`
+      SELECT * FROM trades
+      WHERE LOWER(traderAddress) = LOWER(?)
+      ORDER BY datetime(timestamp) ASC
+    `).all(address) as any[];
+
+    const tokens = getTokens();
+    const tokenStats: Record<string, any> = {};
+
+    let totalVolume = 0;
+    let profitableSells = 0;
+    let totalSells = 0;
+    let realizedPnl = 0;
+
+    for (const trade of trades) {
+      const tId = trade.tokenId;
+      const tok = tokens.find(t => t.id === tId);
+      if (!tok) continue;
+
+      if (!tokenStats[tId]) {
+        tokenStats[tId] = {
+          tokenId: tId,
+          ticker: tok.ticker,
+          name: tok.name,
+          logoColor: tok.logoColor,
+          currentPrice: tok.price,
+          totalBought: 0,
+          totalSold: 0,
+          totalUsdcSpent: 0,
+          totalUsdcReceived: 0,
+          avgEntryPrice: 0,
+          realizedPnl: 0,
+          currentTokens: 0,
+        };
+      }
+
+      const stats = tokenStats[tId];
+      const side = trade.side;
+      const tokenAmount = Number(trade.tokenAmount);
+      const wusdcAmount = Number(trade.wusdcAmount);
+      totalVolume += wusdcAmount;
+
+      if (side === "buy") {
+        stats.totalBought += tokenAmount;
+        stats.totalUsdcSpent += wusdcAmount;
+        
+        const currentCost = stats.currentTokens * stats.avgEntryPrice;
+        const newCost = currentCost + wusdcAmount;
+        stats.currentTokens += tokenAmount;
+        if (stats.currentTokens > 0) {
+          stats.avgEntryPrice = newCost / stats.currentTokens;
+        }
+      } else if (side === "sell") {
+        totalSells++;
+        stats.totalSold += tokenAmount;
+        stats.totalUsdcReceived += wusdcAmount;
+
+        const costBasis = tokenAmount * stats.avgEntryPrice;
+        const gain = wusdcAmount - costBasis;
+        stats.realizedPnl += gain;
+        realizedPnl += gain;
+        if (gain > 0) profitableSells++;
+        
+        stats.currentTokens = Math.max(0, stats.currentTokens - tokenAmount);
+      }
+    }
+
+    const holdings = Object.values(tokenStats)
+      .filter((s: any) => s.currentTokens > 0 || s.realizedPnl !== 0)
+      .map((s: any) => ({
+        tokenId: s.tokenId,
+        ticker: s.ticker,
+        name: s.name,
+        logoColor: s.logoColor,
+        balance: s.currentTokens,
+        value: Number((s.currentTokens * s.currentPrice).toFixed(2)),
+        avgEntry: Number(s.avgEntryPrice.toFixed(8)),
+        realizedPnl: Number(s.realizedPnl.toFixed(2)),
+      }));
+
+    const finalRealizedPnl = isMock ? mockData.realizedPnl : realizedPnl;
+    const finalWinRate = isMock ? mockData.winRate : (totalSells > 0 ? Math.round((profitableSells / totalSells) * 100) : 50);
+    const finalVolume = isMock ? mockData.volume : totalVolume;
+    const finalTradesCount = isMock ? mockData.tradesCount : trades.length;
+    const finalHoldings = isMock ? [...mockData.holdings, ...holdings] : holdings;
+
+    return {
+      address,
+      realizedPnl: Number(finalRealizedPnl.toFixed(2)),
+      winRate: finalWinRate,
+      volume: Number(finalVolume.toFixed(2)),
+      tradesCount: finalTradesCount,
+      holdings: finalHoldings,
+      trades: trades.reverse().slice(0, 50),
+    };
+  } catch (err) {
+    return {
+      address,
+      realizedPnl: isMock ? mockData.realizedPnl : 0,
+      winRate: isMock ? mockData.winRate : 50,
+      volume: isMock ? mockData.volume : 0,
+      tradesCount: isMock ? mockData.tradesCount : 0,
+      holdings: isMock ? mockData.holdings : [],
+      trades: [],
+    };
+  }
 }

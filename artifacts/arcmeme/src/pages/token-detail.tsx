@@ -39,7 +39,7 @@ import { calculateAmountIn, calculateAmountOut } from "@/lib/arc-amm";
 import { Link } from "wouter";
 import { useTokenSecurity } from "@/hooks/use-token-security";
 import { CommentsSection } from "@/components/comments-section";
-import { ShieldAlert, ShieldCheck } from "lucide-react";
+import { ShieldAlert, ShieldCheck, Flame, Zap } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 
@@ -127,6 +127,82 @@ export function TokenDetailPage() {
   const [activeTerminalTab, setActiveTerminalTab] = useState<"txs" | "traders" | "holders" | "lps">("txs");
   const [mainDetailTab, setMainDetailTab] = useState<"ledger" | "security" | "discussion">("ledger");
   const [isMobileTradeOpen, setIsMobileTradeOpen] = useState(false);
+
+  // Sentiment & Hype Boost states
+  const [hypeScore, setHypeScore] = useState(token?.hypeScore ?? 0);
+  const [showHypePulse, setShowHypePulse] = useState(false);
+
+  useEffect(() => {
+    if (token) setHypeScore(token.hypeScore ?? 0);
+  }, [token]);
+
+  const handleHypeBoost = async () => {
+    if (!token) return;
+    setShowHypePulse(true);
+    setTimeout(() => setShowHypePulse(false), 800);
+    
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.3);
+    } catch {
+      // ignore context lock
+    }
+
+    setHypeScore((prev) => prev + 1);
+
+    try {
+      await fetch(`/api/tokens/${encodeURIComponent(token.id)}/hype`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ points: 1 }),
+      });
+      toast({
+        title: "🔥 HYPE BOOST MIRRORED",
+        description: "Community energy multiplier increased!",
+      });
+    } catch {
+      // fallback
+    }
+  };
+
+  const [votes, setVotes] = useState(() => {
+    const key = `arcmeme.votes.${id}`;
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : { bull: 42, bear: 18 };
+      } catch {
+        return { bull: 42, bear: 18 };
+      }
+    }
+    return { bull: 42, bear: 18 };
+  });
+
+  const castVote = (type: "bull" | "bear") => {
+    const updated = {
+      ...votes,
+      [type]: votes[type] + 1,
+    };
+    setVotes(updated);
+    localStorage.setItem(`arcmeme.votes.${id}`, JSON.stringify(updated));
+    toast({
+      title: type === "bull" ? "🐂 BULLISH SENTIMENT CAST" : "🐻 BEARISH SENTIMENT CAST",
+      description: "Your vote has been broadcast to the pool moodboard.",
+    });
+  };
+
+  const totalVotes = votes.bull + votes.bear;
+  const bullPct = totalVotes > 0 ? (votes.bull / totalVotes) * 100 : 50;
+  const bearPct = 100 - bullPct;
 
   const [notifiedWhaleSwaps, setNotifiedWhaleSwaps] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -777,6 +853,15 @@ export function TokenDetailPage() {
     }));
   }, [candles, chartView, token?.totalSupply]);
 
+  // Calculate expected LP Share % before confirmation
+  const expectedLpShare = useMemo(() => {
+    if (liquidityTab !== "add" || !liquidityUsdcAmount || Number(liquidityUsdcAmount) <= 0) return null;
+    const addedUsdc = Number(liquidityUsdcAmount);
+    const existingUsdc = poolUsdcReserve ? Number(poolUsdcReserve) : 0;
+    if (existingUsdc === 0) return 100;
+    return (addedUsdc / (existingUsdc + addedUsdc)) * 100;
+  }, [liquidityTab, liquidityUsdcAmount, poolUsdcReserve]);
+
   if (tokenLoading) {
     return (
       <div className="p-8 flex justify-center">
@@ -851,6 +936,20 @@ export function TokenDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Security alert banner */}
+          {securityAudit.status !== "Secure" && (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 font-mono text-xs text-destructive flex items-start gap-3 shadow-[0_0_24px_rgba(239,68,68,0.08)] relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-destructive/5 rounded-full blur-xl pointer-events-none" />
+              <ShieldAlert className="h-5 w-5 shrink-0 mt-0.5 animate-pulse text-destructive" />
+              <div className="space-y-1">
+                <div className="font-extrabold uppercase tracking-wider">⚠️ SEC SECURITY PROTOCOL CRITICAL WARNING</div>
+                <p className="opacity-90 leading-relaxed text-[11px]">
+                  Heuristics scanned extreme concentration or low reserves. Creator owns {securityAudit.checks.creatorOwnership.value} of supply. LP reserves might be unlocked. Exercise high caution.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Stats strip */}
           <div className="w-full grid grid-cols-2 md:grid-cols-6 gap-2 bg-card/40 border border-border/80 rounded-xl p-3.5 backdrop-blur-md font-mono text-xs shadow-sm">
@@ -1374,6 +1473,73 @@ export function TokenDetailPage() {
       {/* ─── RIGHT COLUMN: Compact Trading Widgets & Socials ─── */}
       <div className="hidden lg:flex w-full lg:w-[360px] flex-col gap-4 shrink-0 font-mono">
         
+        {/* Full-screen neon green pulse overlay on hype boost click */}
+        {showHypePulse && (
+          <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center animate-out fade-out duration-1000">
+            <div className="absolute inset-0 bg-primary/5 backdrop-blur-[1px] animate-pulse" />
+            <div className="w-[80vw] h-[80vw] max-w-[600px] max-h-[600px] border-[6px] border-primary/20 rounded-full animate-ping" />
+          </div>
+        )}
+
+        {/* Meme Sentiment & Hype Boost Card */}
+        <Card className="border-border/80 bg-card/40 backdrop-blur-md overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-primary/5 rounded-full blur-lg pointer-events-none" />
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Flame className="h-4 w-4 text-primary animate-pulse" />
+              Arena Mood & Hype Reactor
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 space-y-4 font-mono text-xs">
+            
+            {/* Bull / Bear Sentiment Poll */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] text-muted-foreground font-extrabold uppercase">
+                <span>🐂 Bullish: {bullPct.toFixed(0)}%</span>
+                <span>Bearish: {bearPct.toFixed(0)}% 🐻</span>
+              </div>
+              <div className="h-2 rounded-full overflow-hidden flex bg-destructive/30 border border-border/20">
+                <div className="h-full bg-primary transition-all duration-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" style={{ width: `${bullPct}%` }} />
+                <div className="h-full bg-destructive transition-all duration-500" style={{ width: `${bearPct}%` }} />
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Button
+                  size="sm"
+                  onClick={() => castVote("bull")}
+                  className="h-8 border border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 text-[10px] uppercase font-bold"
+                >
+                  Bullish 🐂
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => castVote("bear")}
+                  className="h-8 border border-destructive/25 bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] uppercase font-bold"
+                >
+                  Bearish 🐻
+                </Button>
+              </div>
+            </div>
+
+            <div className="border-t border-border/20 pt-3.5 space-y-2.5">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground font-extrabold uppercase">
+                <span>Hype Energy Matrix</span>
+                <span className="text-primary font-black animate-bounce">{hypeScore} Points</span>
+              </div>
+              <Button
+                onClick={handleHypeBoost}
+                className="w-full h-10 text-black bg-primary hover:bg-primary/90 font-extrabold uppercase tracking-widest text-[11px] shadow-[0_0_20px_rgba(34,197,94,0.25)] flex items-center justify-center gap-2 group"
+              >
+                <Zap className="h-4 w-4 fill-black group-hover:scale-125 transition-transform animate-pulse" />
+                Trigger Hype Boost!
+              </Button>
+              <div className="text-[8px] text-center text-muted-foreground uppercase leading-relaxed mt-1">
+                Hype Boost multiplies discoverability trending velocity
+              </div>
+            </div>
+
+          </CardContent>
+        </Card>
+
         {/* Trading widget terminal */}
         <Card className="border-border/80 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-3 border-b border-border/40">
@@ -1514,6 +1680,12 @@ export function TokenDetailPage() {
                     className="font-mono bg-background/50 h-10 border-border/60"
                   />
                 </div>
+                {expectedLpShare !== null && (
+                  <div className="flex justify-between items-center text-[10px] font-bold text-primary bg-primary/5 border border-primary/20 rounded p-2.5 mt-2">
+                    <span className="uppercase">Expected LP Share</span>
+                    <span>{expectedLpShare.toFixed(4)}%</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3.5">

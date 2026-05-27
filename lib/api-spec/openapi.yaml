@@ -296,6 +296,18 @@ components:
           type: ["string", "null"]
         telegram:
           type: ["string", "null"]
+        momentumScore:
+          type: number
+        trustScore:
+          type: number
+        creatorHoldingPercent:
+          type: number
+        riskFlags:
+          type: string
+        signals:
+          type: string
+        hypeScore:
+          type: integer
 
     TokenInput:
       type: object
