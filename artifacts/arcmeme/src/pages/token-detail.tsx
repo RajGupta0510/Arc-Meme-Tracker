@@ -2,12 +2,12 @@ import { useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useGetToken, getGetTokenQueryKey, useGetTokenTrades, getGetTokenTradesQueryKey, useGetTokenCandles, getGetTokenCandlesQueryKey, type Trade } from "@workspace/api-client-react";
 import { TokenLogo } from "@/components/token-card";
-import { formatCompactNumber, formatAddress, formatBalance } from "@/lib/utils";
+import { formatCompactNumber, formatAddress, formatBalance, formatPrice } from "@/lib/utils";
 import { MarketCandlestickChart, type MarketCandle } from "@/components/market-candlestick-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useWallet } from "@/hooks/use-wallet";
 import { useTokenMarket } from "@/hooks/use-token-market";
 import { useTokenTrade } from "@/hooks/use-token-trade";
@@ -32,7 +32,9 @@ import {
   Lock, 
   ArrowUpRight, 
   MessageSquare,
-  AlertCircle
+  AlertCircle,
+  Star,
+  Bell
 } from "lucide-react";
 import { formatUnits, parseUnits } from "ethers";
 import { calculateAmountIn, calculateAmountOut } from "@/lib/arc-amm";
@@ -41,9 +43,18 @@ import { useTokenSecurity } from "@/hooks/use-token-security";
 import { CommentsSection } from "@/components/comments-section";
 import { ShieldAlert, ShieldCheck, Flame, Zap } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 
-const candleIntervals = ["1m", "5m", "15m", "1h", "4h"] as const;
+const candleIntervals = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 type CandleInterval = (typeof candleIntervals)[number];
 
 type AlertRule = {
@@ -54,11 +65,125 @@ type AlertRule = {
   target: number;
 };
 
+function GrowthUpIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </svg>
+  );
+}
+
+function GrowthDownIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="22 17 13.5 8.5 8.5 13.5 2 7" />
+      <polyline points="16 17 22 17 22 11" />
+    </svg>
+  );
+}
+
 export function TokenDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { state, refresh: refreshWallet } = useWallet();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const audio = useAudioTelemetry();
+
+  // Watchlist & Alerts Management State
+  const [watchlist, setWatchlist] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("arcmeme.watchlist");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const isWatched = watchlist.includes(id!);
+
+  const toggleWatchlist = () => {
+    let next: string[];
+    if (isWatched) {
+      next = watchlist.filter((item) => item !== id);
+      toast({
+        title: "⭐️ WATCHLIST REMOVED",
+        description: `$${token?.ticker || "Token"} removed from watchlist.`,
+      });
+    } else {
+      next = [...watchlist, id!];
+      toast({
+        title: "⭐️ WATCHLIST ADDED",
+        description: `$${token?.ticker || "Token"} added to watchlist successfully.`,
+      });
+    }
+    setWatchlist(next);
+    localStorage.setItem("arcmeme.watchlist", JSON.stringify(next));
+  };
+
+  const [alertModalOpen, setAlertModalOpen] = useState(false);
+  const [alertMetric, setAlertMetric] = useState<AlertRule["metric"]>("price_above");
+  const [alertTargetValue, setAlertTargetValue] = useState("");
+  const [alerts, setAlerts] = useState<AlertRule[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("arcmeme.alerts");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleCreateAlert = () => {
+    const target = Number(alertTargetValue);
+    if (!token || !Number.isFinite(target) || target <= 0) {
+      toast({
+        title: "Invalid Target",
+        description: "Please specify a positive numerical target value.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => undefined);
+    }
+
+    const newAlert: AlertRule = {
+      id: `${token.id}-${Date.now()}`,
+      tokenId: token.id,
+      ticker: token.ticker,
+      metric: alertMetric,
+      target,
+    };
+
+    const updated = [newAlert, ...alerts].slice(0, 8);
+    setAlerts(updated);
+    localStorage.setItem("arcmeme.alerts", JSON.stringify(updated));
+    setAlertTargetValue("");
+    setAlertModalOpen(false);
+
+    toast({
+      title: "🔔 PRICE ALERT ARMED",
+      description: `Target set at $${target.toLocaleString()} for $${token.ticker}`,
+    });
+  };
 
   const { data: token, isLoading: tokenLoading, isError: tokenError, refetch: refetchToken } = useGetToken(id!, {
     query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
@@ -86,11 +211,12 @@ export function TokenDetailPage() {
       } else if (currentPrice < lastPrice) {
         setPriceFlash("down");
       }
+      audio.playTickerClick();
     }
     setLastPrice(currentPrice);
     const timer = setTimeout(() => setPriceFlash(null), 1000);
     return () => clearTimeout(timer);
-  }, [currentPrice, lastPrice]);
+  }, [currentPrice, lastPrice, audio]);
 
   const { data: trades = [], isLoading: tradesLoading, isError: tradesError } = useGetTokenTrades(id!, {
     query: {
@@ -141,21 +267,7 @@ export function TokenDetailPage() {
     setShowHypePulse(true);
     setTimeout(() => setShowHypePulse(false), 800);
     
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
-      gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.3);
-    } catch {
-      // ignore context lock
-    }
+    audio.playHypeSound();
 
     setHypeScore((prev) => prev + 1);
 
@@ -171,6 +283,69 @@ export function TokenDetailPage() {
       });
     } catch {
       // fallback
+    }
+  };
+
+  // AI Sentiment & Audit state
+  const [aiSentiment, setAiSentiment] = useState<{
+    buzzScore: number;
+    hypeStatus: string;
+    sentimentSummary: string;
+    mentionsCount: number;
+  } | null>(null);
+
+  const [aiAuditResult, setAiAuditResult] = useState<{
+    safetyScore: number;
+    verdict: "danger" | "warning" | "safe";
+    summary: string;
+    auditLogs: string[];
+    satiricalWarning: string;
+    creatorConcentration: number;
+  } | null>(null);
+
+  const [isAuditing, setIsAuditing] = useState(false);
+
+  const fetchSentiment = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/tokens/${encodeURIComponent(id)}/sentiment`);
+      if (res.ok) {
+        const data = await res.json();
+        setAiSentiment(data);
+      }
+    } catch {
+      // ignore
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchSentiment();
+  }, [fetchSentiment, hypeScore, trades.length]);
+
+  const runAiAudit = async () => {
+    if (!id) return;
+    setIsAuditing(true);
+    setAiAuditResult(null);
+    audio.playTickerClick();
+    
+    // Simulate high-tech decompiler scans with local tick steps
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    try {
+      const res = await fetch(`/api/tokens/${encodeURIComponent(id)}/ai-audit`);
+      if (res.ok) {
+        const data = await res.json();
+        setAiAuditResult(data);
+        if (data.verdict === "danger" || data.verdict === "warning") {
+          audio.playAlarmSound();
+        } else {
+          audio.playHypeSound();
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsAuditing(false);
     }
   };
 
@@ -195,7 +370,7 @@ export function TokenDetailPage() {
     setVotes(updated);
     localStorage.setItem(`arcmeme.votes.${id}`, JSON.stringify(updated));
     toast({
-      title: type === "bull" ? "🐂 BULLISH SENTIMENT CAST" : "🐻 BEARISH SENTIMENT CAST",
+      title: type === "bull" ? "📈 PUMP UP SENTIMENT CAST" : "📉 PUMP DOWN SENTIMENT CAST",
       description: "Your vote has been broadcast to the pool moodboard.",
     });
   };
@@ -417,6 +592,12 @@ export function TokenDetailPage() {
     computedStats.holders,
     poolUsdcReserve !== null ? Number(poolUsdcReserve) : null
   );
+
+  useEffect(() => {
+    if (securityAudit.status === "High Risk" || securityAudit.status === "Dangerous") {
+      audio.playAlarmSound();
+    }
+  }, [securityAudit.status, audio]);
 
   const copyToClipboard = (addr: string) => {
     navigator.clipboard.writeText(addr);
@@ -768,6 +949,7 @@ export function TokenDetailPage() {
 
   const handleTrade = async () => {
     if (!market.reserves) return;
+    const amountStr = tradeInputAmount;
     const txHash = await trade.executeTrade({
       token: token!,
       side: tradeTab,
@@ -778,6 +960,13 @@ export function TokenDetailPage() {
     });
 
     if (!txHash) return;
+    
+    if (tradeTab === "buy") {
+      audio.playBuySound(Number(amountStr));
+    } else {
+      audio.playSellSound(Number(amountStr));
+    }
+
     setTradeInputAmount("");
     setTradeOutputAmount("");
     await Promise.all([
@@ -799,6 +988,13 @@ export function TokenDetailPage() {
     });
 
     if (!txHash) return;
+
+    if (side === "buy") {
+      audio.playBuySound(Number(amountStr));
+    } else {
+      audio.playSellSound(Number(amountStr));
+    }
+
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getGetTokenTradesQueryKey(id!) }),
       queryClient.invalidateQueries({ queryKey: getGetTokenCandlesQueryKey(id!) }),
@@ -926,7 +1122,7 @@ export function TokenDetailPage() {
                       : "text-foreground"
                   }`}
                 >
-                  ${displayPrice.toFixed(6)}
+                  ${formatPrice(displayPrice)}
                 </div>
                 <div className="flex items-center gap-1.5 justify-end font-mono text-xs font-bold mt-0.5">
                   <span className={isPositive ? "text-primary" : "text-destructive"}>
@@ -953,7 +1149,7 @@ export function TokenDetailPage() {
 
           {/* Stats strip */}
           <div className="w-full grid grid-cols-2 md:grid-cols-6 gap-2 bg-card/40 border border-border/80 rounded-xl p-3.5 backdrop-blur-md font-mono text-xs shadow-sm">
-            <StatStripBox label="Price USD" value={`$${displayPrice.toFixed(6)}`} highlight />
+            <StatStripBox label="Price USD" value={`$${formatPrice(displayPrice)}`} highlight />
             <StatStripBox label="Liquidity" value={poolUsdcReserve ? `$${formatCompactNumber(Number(poolUsdcReserve) * 2)}` : "$0"} />
             <StatStripBox label="Market Cap" value={`$${formatCompactNumber(token.marketCap)}`} />
             <StatStripBox label="24h Volume" value={`$${formatCompactNumber(token.volume24h)}`} />
@@ -1028,6 +1224,8 @@ export function TokenDetailPage() {
             )}
           </CardContent>
         </Card>
+
+
 
         {/* ─── MAIN DETAIL TABS ─── */}
         <div className="flex border-b border-border/40 pb-0.5 gap-2 overflow-x-auto shrink-0 font-mono text-xs">
@@ -1131,7 +1329,7 @@ export function TokenDetailPage() {
                             </td>
                             <td className="p-3 text-right font-bold">${formatBalance(t.wusdcAmount)}</td>
                             <td className="p-3 text-right text-foreground">{formatBalance(t.tokenAmount)}</td>
-                            <td className="p-3 text-right text-muted-foreground">${t.executionPrice.toFixed(6)}</td>
+                            <td className="p-3 text-right text-muted-foreground">${formatPrice(t.executionPrice)}</td>
                             <td className="p-3">
                               <div className="flex items-center gap-1">
                                 <Link 
@@ -1402,6 +1600,71 @@ export function TokenDetailPage() {
               </div>
             </div>
 
+            {/* Cybernetic Liquidity Health Console */}
+            <div className="space-y-3 bg-black/60 border border-primary/20 rounded-xl p-4.5 font-mono text-xs">
+              <div className="flex items-center justify-between border-b border-primary/20 pb-2">
+                <div className="text-[10px] text-primary font-bold uppercase tracking-widest flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  DEX Reserve & Liquidity Health
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[8px] font-extrabold uppercase border ${
+                  market.reserves
+                    ? "bg-primary/10 border-primary/20 text-primary"
+                    : "bg-destructive/10 border-destructive/20 text-destructive"
+                }`}>
+                  {market.reserves ? "🟢 OPTIMAL LIQUIDITY" : "🔴 UNLISTED RESERVES"}
+                </span>
+              </div>
+
+              {market.reserves ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[9px] text-muted-foreground uppercase">
+                      <span>Reserve Ratio Health</span>
+                      <span className="text-primary font-bold">
+                        {Math.min(100, Math.round((Number(formatUnits(market.reserves.quoteReserve, 18)) * 2 / (token?.marketCap || 1)) * 100))}% Pool Depth
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-secondary/35 border border-border/20 flex overflow-hidden">
+                      <div 
+                        className="h-full rounded-full bg-primary" 
+                        style={{ 
+                          width: `${Math.min(100, Math.round((Number(formatUnits(market.reserves.quoteReserve, 18)) * 2 / (token?.marketCap || 1)) * 100))}%` 
+                        }} 
+                      />
+                    </div>
+                    <div className="text-[8px] text-muted-foreground leading-relaxed mt-1">
+                      AMM reserve holds <span className="text-primary font-bold">{poolUsdcReserve} WUSDC</span> and <span className="text-primary font-bold">{poolTokenReserve} ${token?.ticker}</span>. 
+                      This provides optimal protection against whale price slippage.
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 border-t md:border-t-0 md:border-l border-primary/10 pt-2 md:pt-0 md:pl-4">
+                    <div className="flex justify-between text-[9px] text-muted-foreground uppercase">
+                      <span>Whale Concentration Weight</span>
+                      <span className="text-yellow-400 font-bold">{securityAudit.checks.creatorOwnership.value}</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-secondary/35 border border-border/20 flex overflow-hidden">
+                      <div 
+                        className="h-full rounded-full bg-yellow-400" 
+                        style={{ 
+                          width: `${Math.min(100, parseFloat(securityAudit.checks.creatorOwnership.value) || 20)}%` 
+                        }} 
+                      />
+                    </div>
+                    <div className="text-[8px] text-muted-foreground leading-relaxed mt-1">
+                      Creator owns <span className="text-yellow-400 font-bold">{securityAudit.checks.creatorOwnership.value}</span> of supply.
+                      Holdings exceeding 10% are actively flagged as risk variables in automated copytrade transactions.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground italic text-[10px]">
+                  [SYS] This token has no active reserves. Build an ApexiSwap pool on the Launchpad to list and fund LP pools.
+                </div>
+              )}
+            </div>
+
             {/* Safety Checklist Table/List */}
             <div className="space-y-3.5">
               <h4 className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Safety Audit Checklist</h4>
@@ -1449,6 +1712,117 @@ export function TokenDetailPage() {
               </p>
             </div>
 
+            {/* AI Degen Auditor Panel */}
+            <div className="border border-primary/20 bg-background/40 rounded-xl p-4.5 space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="space-y-1">
+                  <h4 className="text-[11px] font-black uppercase text-primary flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-primary animate-pulse" />
+                    AI Degen Auditor Scan
+                  </h4>
+                  <p className="text-[9px] text-muted-foreground uppercase leading-none">
+                    Hyper-Decompiler Bytecode heuristic analyst
+                  </p>
+                </div>
+                
+                <Button
+                  onClick={runAiAudit}
+                  disabled={isAuditing}
+                  className="h-8 text-black bg-primary hover:bg-primary/90 font-extrabold uppercase text-[10px] tracking-wider px-4 flex items-center gap-1.5 shadow-[0_0_12px_rgba(34,197,94,0.15)]"
+                >
+                  {isAuditing ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Decompiling...
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="h-3.5 w-3.5" />
+                      Run AI Degen Audit
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {isAuditing && (
+                <div className="bg-black/80 border border-primary/20 rounded-lg p-3.5 font-mono text-[9px] text-primary/80 space-y-2 relative overflow-hidden">
+                  <div className="absolute inset-x-0 top-0 h-[2px] bg-primary/30 animate-pulse" />
+                  <div className="flex items-center gap-2 text-primary font-black animate-pulse">
+                    <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                    DECOMPILER SCAN ACTIVE... DO NOT INTERRUPT SYSTEM INTERACTION
+                  </div>
+                  <div className="space-y-1 border-t border-primary/10 pt-2 opacity-70">
+                    <div className="animate-[pulse_1s_infinite]">LOG: decompiling contract methods and bytecode chunks...</div>
+                    <div className="animate-[pulse_1.2s_infinite]">LOG: running creator concentration weight algorithms...</div>
+                    <div className="animate-[pulse_1.4s_infinite]">LOG: simulating honeypot swap outcomes...</div>
+                  </div>
+                </div>
+              )}
+
+              {aiAuditResult && !isAuditing && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="bg-secondary/15 border border-border/40 rounded-lg p-3 flex flex-col justify-between">
+                      <div className="text-[9px] text-muted-foreground uppercase font-extrabold">Calculated Safety Score:</div>
+                      <div className="flex items-baseline gap-1.5 pt-2">
+                        <span 
+                          className="text-3xl font-black"
+                          style={{
+                            color: aiAuditResult.verdict === "safe" ? "#22c55e" : aiAuditResult.verdict === "warning" ? "#eab308" : "#ef4444"
+                          }}
+                        >
+                          {aiAuditResult.safetyScore}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">/ 100</span>
+                      </div>
+                      <div className="text-[8px] uppercase text-muted-foreground pt-1.5">
+                        Verdict status: <span 
+                          className="font-bold"
+                          style={{
+                            color: aiAuditResult.verdict === "safe" ? "#22c55e" : aiAuditResult.verdict === "warning" ? "#eab308" : "#ef4444"
+                          }}
+                        >
+                          {aiAuditResult.verdict} risk profile
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-secondary/15 border border-border/40 rounded-lg p-3 flex flex-col justify-between">
+                      <div className="text-[9px] text-muted-foreground uppercase font-extrabold">Creator Allocation Weight:</div>
+                      <div className="flex items-baseline gap-1 pt-2">
+                        <span className="text-3xl font-black text-foreground">{aiAuditResult.creatorConcentration}%</span>
+                      </div>
+                      <div className="text-[8px] uppercase text-muted-foreground pt-1.5">
+                        Supply holding index
+                      </div>
+                    </div>
+                  </div>
+
+                  <div 
+                    className="border rounded-lg p-3 text-[10px] leading-relaxed uppercase space-y-1 font-bold"
+                    style={{
+                      color: aiAuditResult.verdict === "safe" ? "#22c55e" : aiAuditResult.verdict === "warning" ? "#eab308" : "#ef4444",
+                      borderColor: aiAuditResult.verdict === "safe" ? "rgba(34,197,94,0.2)" : aiAuditResult.verdict === "warning" ? "rgba(234,179,8,0.2)" : "rgba(239,68,68,0.2)",
+                      backgroundColor: aiAuditResult.verdict === "safe" ? "rgba(34,197,94,0.03)" : aiAuditResult.verdict === "warning" ? "rgba(234,179,8,0.03)" : "rgba(239,68,68,0.03)"
+                    }}
+                  >
+                    <div className="text-[8px] uppercase opacity-70">AI HEURISTIC SCANNER VERDICT:</div>
+                    <div>{aiAuditResult.satiricalWarning}</div>
+                  </div>
+
+                  <div className="bg-black/90 border border-border/40 rounded-lg p-3 font-mono text-[8px] text-primary/75 space-y-1 max-h-36 overflow-y-auto">
+                    <div className="text-[8px] font-black border-b border-primary/10 pb-1 text-primary">AUDITOR TERMINAL SCAN OUTPUTS</div>
+                    {aiAuditResult.auditLogs.map((log, i) => (
+                      <div key={i} className="flex gap-1.5 leading-normal">
+                        <span className="text-primary/40 shrink-0">[{i+1}]</span>
+                        <span>{log}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
           </CardContent>
         </Card>
       )}
@@ -1471,7 +1845,7 @@ export function TokenDetailPage() {
     </div>
 
       {/* ─── RIGHT COLUMN: Compact Trading Widgets & Socials ─── */}
-      <div className="hidden lg:flex w-full lg:w-[360px] flex-col gap-4 shrink-0 font-mono">
+      <div className="w-full lg:w-[360px] flex flex-col gap-4 shrink-0 font-mono lg:sticky lg:top-[80px] lg:self-start lg:max-h-[calc(100vh-100px)] lg:overflow-y-auto pr-1 pb-10 hide-scrollbar">
         
         {/* Full-screen neon green pulse overlay on hype boost click */}
         {showHypePulse && (
@@ -1480,6 +1854,43 @@ export function TokenDetailPage() {
             <div className="w-[80vw] h-[80vw] max-w-[600px] max-h-[600px] border-[6px] border-primary/20 rounded-full animate-ping" />
           </div>
         )}
+
+        {/* Watchlist & Alerts Button Strip (DEX Screener style) */}
+        <div className="grid grid-cols-2 gap-3 bg-card/45 border border-border/80 rounded-xl p-3.5 backdrop-blur-md text-xs shadow-sm">
+          <Button
+            variant="outline"
+            onClick={toggleWatchlist}
+            className={`h-11 font-extrabold uppercase tracking-wider text-[11px] flex items-center justify-center gap-2 border transition-all duration-300 ${
+              isWatched
+                ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/35 hover:bg-yellow-500/20 shadow-[0_0_12px_rgba(234,179,8,0.12)]"
+                : "border-border/60 text-muted-foreground hover:text-foreground hover:bg-secondary/20"
+            }`}
+          >
+            <Star className="h-4.5 w-4.5 shrink-0" fill={isWatched ? "currentColor" : "none"} />
+            <span>{isWatched ? "Watched" : "Watchlist"}</span>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setAlertModalOpen(true)}
+            className="h-11 font-extrabold uppercase tracking-wider text-[11px] flex items-center justify-center gap-2 border border-border/60 text-muted-foreground hover:text-foreground hover:bg-secondary/20 transition-all duration-300"
+          >
+            <Bell className="h-4.5 w-4.5 shrink-0" />
+            <span>Set Alert</span>
+          </Button>
+        </div>
+
+        {/* Trading widget terminal */}
+        <Card className="border-border/80 bg-card/40 backdrop-blur-md">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-primary" />
+              Trade Execution Terminal
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {renderTradeTerminal()}
+          </CardContent>
+        </Card>
 
         {/* Meme Sentiment & Hype Boost Card */}
         <Card className="border-border/80 bg-card/40 backdrop-blur-md overflow-hidden relative">
@@ -1494,9 +1905,15 @@ export function TokenDetailPage() {
             
             {/* Bull / Bear Sentiment Poll */}
             <div className="space-y-2">
-              <div className="flex justify-between text-[10px] text-muted-foreground font-extrabold uppercase">
-                <span>🐂 Bullish: {bullPct.toFixed(0)}%</span>
-                <span>Bearish: {bearPct.toFixed(0)}% 🐻</span>
+              <div className="flex justify-between text-[10px] font-extrabold uppercase">
+                <span className="flex items-center gap-1 text-primary">
+                  <GrowthUpIcon className="h-4 w-4 shrink-0 animate-pulse" />
+                  Pump Up: {bullPct.toFixed(0)}%
+                </span>
+                <span className="flex items-center gap-1 text-destructive">
+                  Pump Down: {bearPct.toFixed(0)}%
+                  <GrowthDownIcon className="h-4 w-4 shrink-0" />
+                </span>
               </div>
               <div className="h-2 rounded-full overflow-hidden flex bg-destructive/30 border border-border/20">
                 <div className="h-full bg-primary transition-all duration-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" style={{ width: `${bullPct}%` }} />
@@ -1506,19 +1923,50 @@ export function TokenDetailPage() {
                 <Button
                   size="sm"
                   onClick={() => castVote("bull")}
-                  className="h-8 border border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 text-[10px] uppercase font-bold"
+                  className="h-8 border border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 text-[10px] uppercase font-bold flex items-center justify-center gap-1.5"
                 >
-                  Bullish 🐂
+                  <GrowthUpIcon className="h-3.5 w-3.5" />
+                  Pump Up
                 </Button>
                 <Button
                   size="sm"
                   onClick={() => castVote("bear")}
-                  className="h-8 border border-destructive/25 bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] uppercase font-bold"
+                  className="h-8 border border-destructive/25 bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] uppercase font-bold flex items-center justify-center gap-1.5"
                 >
-                  Bearish 🐻
+                  Pump Down
+                  <GrowthDownIcon className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>
+
+            {aiSentiment && (
+              <div className="border-t border-border/20 pt-3.5 space-y-3">
+                <div className="flex justify-between items-center text-[10px] text-muted-foreground font-extrabold uppercase">
+                  <span>AI Sentiment Radar</span>
+                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-[9px] font-black tracking-widest animate-pulse">
+                    {aiSentiment.hypeStatus}
+                  </span>
+                </div>
+                
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px] uppercase font-bold text-muted-foreground">
+                    <span>Degen Buzz Score:</span>
+                    <span className="text-foreground font-black">{aiSentiment.buzzScore} / 100</span>
+                  </div>
+                  <div className="h-2 rounded bg-secondary/35 border border-border/10 overflow-hidden flex">
+                    <div 
+                      className="h-full bg-primary transition-all duration-1000 shadow-[0_0_10px_rgba(34,197,94,0.3)]" 
+                      style={{ width: `${aiSentiment.buzzScore}%` }} 
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-secondary/15 border border-border/20 rounded p-2.5 space-y-1 text-[9px] leading-relaxed uppercase">
+                  <div className="text-[8px] font-bold text-muted-foreground">AI SUMMARY TELEMETRY:</div>
+                  <div className="text-foreground/90 font-medium">{aiSentiment.sentimentSummary}</div>
+                </div>
+              </div>
+            )}
 
             <div className="border-t border-border/20 pt-3.5 space-y-2.5">
               <div className="flex justify-between items-center text-[10px] text-muted-foreground font-extrabold uppercase">
@@ -1537,19 +1985,6 @@ export function TokenDetailPage() {
               </div>
             </div>
 
-          </CardContent>
-        </Card>
-
-        {/* Trading widget terminal */}
-        <Card className="border-border/80 bg-card/40 backdrop-blur-md">
-          <CardHeader className="pb-3 border-b border-border/40">
-            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Wallet className="h-4 w-4 text-primary" />
-              Trade Execution Terminal
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            {renderTradeTerminal()}
           </CardContent>
         </Card>
 
@@ -1902,6 +2337,68 @@ export function TokenDetailPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Sleek Cyber-Alert Management Dialog */}
+      <Dialog open={alertModalOpen} onOpenChange={setAlertModalOpen}>
+        <DialogContent className="border-border/80 bg-card/95 backdrop-blur-xl max-w-md p-6 font-mono text-xs z-[150] shadow-[0_0_50px_rgba(34,197,94,0.08)] border-primary/20">
+          <DialogHeader className="border-b border-border/40 pb-3 mb-4 text-left">
+            <DialogTitle className="text-sm font-bold uppercase tracking-wider text-primary flex items-center gap-2">
+              <Bell className="h-4.5 w-4.5 text-primary animate-pulse" />
+              Manage Price Alerts: ${token.ticker}
+            </DialogTitle>
+            <DialogDescription className="text-[10px] text-muted-foreground uppercase mt-1">
+              Configure telemetry thresholds to push system & browser notifications
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-1">
+            <div className="space-y-2">
+              <label className="text-[10px] text-muted-foreground uppercase font-bold">Alert Trigger Metric</label>
+              <select
+                value={alertMetric}
+                onChange={(event) => setAlertMetric(event.target.value as AlertRule["metric"])}
+                className="w-full h-11 rounded-lg border border-border/60 bg-background/50 px-3.5 font-mono text-xs text-foreground focus:outline-none focus:border-primary/50 transition-colors uppercase cursor-pointer"
+              >
+                <option value="price_above">Price goes over ($)</option>
+                <option value="price_below">Price goes below ($)</option>
+                <option value="volume_spike">24h Volume Exceeds ($)</option>
+                <option value="liquidity_change">Liquidity (MCap) Exceeds ($)</option>
+                <option value="whale_swap">Individual Whale Swap ($)</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] text-muted-foreground uppercase font-bold">Target Value Threshold</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-3.5 text-muted-foreground/60 font-bold">$</span>
+                <Input
+                  value={alertTargetValue}
+                  onChange={(e) => setAlertTargetValue(e.target.value)}
+                  placeholder="0.000000"
+                  type="number"
+                  className="pl-7 h-11 bg-background/50 border-border/60 font-mono text-xs focus-visible:ring-primary/40 focus:border-primary/50"
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-4 border-t border-border/30 mt-5 gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setAlertModalOpen(false)}
+              className="h-11 font-bold uppercase tracking-wider text-[10px] border-border/60 hover:bg-secondary/20"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateAlert}
+              className="h-11 font-extrabold uppercase tracking-widest text-[10px] text-black bg-primary hover:bg-primary/90"
+            >
+              Create Alert
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

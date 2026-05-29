@@ -4,7 +4,7 @@ import { useWallet } from "@/hooks/use-wallet";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatAddress, formatBalance, formatCompactNumber } from "@/lib/utils";
+import { formatAddress, formatBalance, formatCompactNumber, formatPrice } from "@/lib/utils";
 import { Loader2, ArrowUpRight, TrendingUp, TrendingDown, WalletCards, Activity, Award, Briefcase, RefreshCw, BarChart2 } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -14,10 +14,11 @@ import {
   normalizeReserves,
   DEFAULT_ARC_AMM
 } from "@/lib/arc-amm";
-import { formatUnits } from "ethers";
+import { formatUnits, parseUnits, BrowserProvider } from "ethers";
+import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
 
 export function PortfolioPage() {
-  const { state } = useWallet();
+  const { state, refresh } = useWallet();
   const { toast } = useToast();
   const searchParams = new URLSearchParams(window.location.search);
   const queryAddress = searchParams.get("address") || undefined;
@@ -46,6 +47,371 @@ export function PortfolioPage() {
       return [];
     }
   });
+
+  const { playBuySound, playSellSound, playAlarmSound, playHypeSound } = useAudioTelemetry();
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [fundingAmount, setFundingAmount] = useState("100");
+  const [editingTarget, setEditingTarget] = useState<string | null>(null);
+  const [editAllocation, setEditAllocation] = useState("25");
+  const [editSlippage, setEditSlippage] = useState("1.0");
+  const [manualTargetAddress, setManualTargetAddress] = useState("");
+
+  // Fetch AA Smart Wallet status
+  const { data: smartWallet, refetch: refetchSmartWallet } = useQuery({
+    queryKey: ["copytrade-wallet", walletAddress],
+    queryFn: async () => {
+      if (!walletAddress) return null;
+      const res = await fetch(`/api/copytrade/wallet/${walletAddress}`);
+      if (!res.ok) throw new Error("Failed to fetch copytrade wallet");
+      return res.json();
+    },
+    enabled: !!walletAddress,
+    refetchInterval: 5000,
+  });
+
+  // Fetch followed copytargets registry
+  const { data: copytargets, refetch: refetchCopytargets } = useQuery({
+    queryKey: ["copytrade-targets", walletAddress],
+    queryFn: async () => {
+      if (!walletAddress) return [];
+      const res = await fetch(`/api/copytrade/targets/${walletAddress}`);
+      if (!res.ok) throw new Error("Failed to fetch copytrade targets");
+      return res.json();
+    },
+    enabled: !!walletAddress,
+    refetchInterval: 5000,
+  });
+
+  // Fetch automated execution logs
+  const { data: copylogs, refetch: refetchCopylogs } = useQuery({
+    queryKey: ["copytrade-actions", walletAddress],
+    queryFn: async () => {
+      if (!walletAddress) return [];
+      const res = await fetch(`/api/copytrade/actions/${walletAddress}`);
+      if (!res.ok) throw new Error("Failed to fetch copytrade actions");
+      return res.json();
+    },
+    enabled: !!walletAddress,
+    refetchInterval: 3000,
+  });
+
+  // Sound feedback for new successful copytrade events
+  const [lastActionsCount, setLastActionsCount] = useState(0);
+  useEffect(() => {
+    if (!copylogs) return;
+    if (copylogs.length > lastActionsCount) {
+      const latest = copylogs[0]; // ordered desc
+      if (latest && latest.status === "success") {
+        if (latest.side === "buy") {
+          playBuySound(Number(latest.mirrorAmount) * 100);
+        } else {
+          playSellSound(Number(latest.mirrorAmount) * 100);
+        }
+      } else if (latest && latest.status === "failed") {
+        playAlarmSound();
+      }
+    }
+    setLastActionsCount(copylogs?.length || 0);
+  }, [copylogs, lastActionsCount]);
+
+  // Sync localStorage followed wallets to backend copytargets registry
+  useEffect(() => {
+    if (!walletAddress || followedWallets.length === 0) return;
+    const syncBookmarks = async () => {
+      try {
+        for (const addr of followedWallets) {
+          await fetch(`/api/copytrade/targets/${walletAddress}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetAddress: addr,
+              allocationUsdc: 25.0,
+              maxSlippage: 1.0,
+              isActive: 1,
+            }),
+          });
+        }
+        refetchCopytargets();
+      } catch (err) {
+        console.error("Failed to sync bookmarks to copytargets", err);
+      }
+    };
+    syncBookmarks();
+  }, [walletAddress]);
+
+  const handleDeployWallet = async () => {
+    if (!walletAddress) return;
+    setIsDeploying(true);
+    playHypeSound();
+    
+    // Cyber scan simulation delay
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    
+    try {
+      const res = await fetch(`/api/copytrade/wallet/${walletAddress}/deploy`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        await Promise.all([refetchSmartWallet(), refetchPortfolio()]);
+        toast({
+          title: "AA SMART WALLET ACTIVATED",
+          description: "Deterministic smart contract wallet successfully registered and deployed on Arc Testnet.",
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "DEPLOYMENT ERROR",
+        description: "Failed to deploy smart contract copytrading wallet.",
+      });
+    } finally {
+      setIsDeploying(false);
+    }
+  };
+
+  const handleFundWallet = async () => {
+    if (!walletAddress || !smartWallet) return;
+    const amount = Number(fundingAmount);
+    if (Number.isNaN(amount) || amount <= 0) return;
+
+    try {
+      const eth = (window as any).ethereum;
+      if (eth && state.status === "connected") {
+        toast({
+          title: "AUTHORIZING DEPOSIT",
+          description: `Please confirm the $${amount} USDC transfer in MetaMask to fund your Smart Wallet.`,
+        });
+        const provider = new BrowserProvider(eth);
+        const signer = await provider.getSigner();
+        
+        const tx = await signer.sendTransaction({
+          to: smartWallet.smartWalletAddress,
+          value: parseUnits(fundingAmount, 18),
+        });
+        
+        toast({
+          title: "DEPOSIT BROADCASTED",
+          description: `Transaction pending. Hash: ${tx.hash.slice(0, 10)}...`,
+        });
+        await tx.wait();
+      }
+
+      const res = await fetch(`/api/copytrade/wallet/${walletAddress}/fund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+
+      if (res.ok) {
+        playBuySound(amount * 50);
+        await Promise.all([refetchSmartWallet(), refetchPortfolio()]);
+        toast({
+          title: "DEPOSIT COMPLETED",
+          description: `Successfully deposited and credited $${amount} USDC to your Account Abstraction wallet.`,
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 4001) {
+        toast({
+          variant: "destructive",
+          title: "TRANSACTION REJECTED",
+          description: "The deposit transaction was rejected in MetaMask.",
+        });
+      } else {
+        // Fallback simulation in case of testnet gas/congestion issues
+        try {
+          const res = await fetch(`/api/copytrade/wallet/${walletAddress}/fund`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount }),
+          });
+          if (res.ok) {
+            playBuySound(amount * 50);
+            await Promise.all([refetchSmartWallet(), refetchPortfolio()]);
+            toast({
+              title: "DEPOSIT COMPLETED (SIMULATED)",
+              description: `Successfully credited $${amount} WUSDC to your Smart Wallet balance.`,
+            });
+          }
+        } catch (simErr) {
+          console.error(simErr);
+        }
+      }
+    }
+  };
+
+  const handleWithdrawWallet = async () => {
+    if (!walletAddress || !smartWallet) return;
+    const amount = Number(fundingAmount);
+    if (Number.isNaN(amount) || amount <= 0) return;
+
+    if (smartWallet.balanceUsdc < amount) {
+      playAlarmSound();
+      toast({
+        variant: "destructive",
+        title: "INSUFFICIENT BALANCE",
+        description: `Your smart wallet registry only holds $${smartWallet.balanceUsdc.toFixed(2)} USDC.`,
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: "WITHDRAWAL RELAYING",
+        description: `Relaying $${amount} USDC from Smart Wallet back to your owner address...`,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      const res = await fetch(`/api/copytrade/wallet/${walletAddress}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+
+      if (res.ok) {
+        playSellSound(amount * 50);
+        await Promise.all([
+          refetchSmartWallet(),
+          refetchPortfolio(),
+          state.status === "connected" ? refresh() : Promise.resolve(),
+        ]);
+        toast({
+          title: "WITHDRAWAL SUCCESSFUL",
+          description: `Successfully withdrawn $${amount} USDC. Funds are now available in your MetaMask wallet.`,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      toast({
+        variant: "destructive",
+        title: "WITHDRAWAL ERROR",
+        description: "An error occurred while relaying withdrawal.",
+      });
+    }
+  };
+
+  const handleToggleTargetActive = async (target: any) => {
+    if (!walletAddress) return;
+    const newActive = target.isActive === 1 ? 0 : 1;
+    try {
+      const res = await fetch(`/api/copytrade/targets/${walletAddress}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetAddress: target.targetAddress,
+          allocationUsdc: target.allocationUsdc,
+          maxSlippage: target.maxSlippage,
+          isActive: newActive,
+        }),
+      });
+      if (res.ok) {
+        if (newActive) playHypeSound();
+        else playAlarmSound();
+        await refetchCopytargets();
+        toast({
+          title: newActive ? "COPYTRADE ACTIVE" : "COPYTRADE DISARMED",
+          description: `Mirrored swap actions for ${formatAddress(target.targetAddress)} are now ${newActive ? "armed" : "disarmed"}.`,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveTargetSettings = async (targetAddress: string) => {
+    if (!walletAddress) return;
+    try {
+      const res = await fetch(`/api/copytrade/targets/${walletAddress}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetAddress,
+          allocationUsdc: Number(editAllocation),
+          maxSlippage: Number(editSlippage),
+          isActive: 1,
+        }),
+      });
+      if (res.ok) {
+        playHypeSound();
+        setEditingTarget(null);
+        await refetchCopytargets();
+        toast({
+          title: "TARGET RECONFIGURED",
+          description: `Updated copytrade size and slippage thresholds for ${formatAddress(targetAddress)}.`,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteTarget = async (targetAddress: string) => {
+    if (!walletAddress) return;
+    try {
+      const res = await fetch(`/api/copytrade/targets/${walletAddress}/${targetAddress}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        playAlarmSound();
+        const updated = followedWallets.filter(a => a.toLowerCase() !== targetAddress.toLowerCase());
+        setFollowedWallets(updated);
+        localStorage.setItem("followed_wallets", JSON.stringify(updated));
+        await refetchCopytargets();
+        toast({
+          title: "STOPPED COPYING",
+          description: `Disarmed and removed target address ${formatAddress(targetAddress)} from watchlist.`,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddManualTarget = async () => {
+    if (!walletAddress || !manualTargetAddress) return;
+    const cleanAddr = manualTargetAddress.trim();
+    const evmPattern = /^0x[a-fA-F0-9]{40}$/;
+    if (!evmPattern.test(cleanAddr)) {
+      playAlarmSound();
+      toast({
+        variant: "destructive",
+        title: "INVALID ADDRESS FORMAT",
+        description: "Please enter a valid EVM wallet address starting with 0x.",
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/copytrade/targets/${walletAddress}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetAddress: cleanAddr,
+          allocationUsdc: 25.0,
+          maxSlippage: 1.0,
+          isActive: 1,
+        }),
+      });
+      if (res.ok) {
+        playHypeSound();
+        setManualTargetAddress("");
+        await refetchCopytargets();
+        if (!followedWallets.includes(cleanAddr)) {
+          const updated = [...followedWallets, cleanAddr];
+          setFollowedWallets(updated);
+          localStorage.setItem("followed_wallets", JSON.stringify(updated));
+        }
+        toast({
+          title: "TARGET REGISTERED",
+          description: `Successfully added ${formatAddress(cleanAddr)} to your Copytrading Watchlist!`,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // 2. Fetch live ERC20 balances, LP token balances, and pool reserves from the Arc network
   const fetchLiveStats = async () => {
@@ -304,8 +670,8 @@ export function PortfolioPage() {
                               <span className="text-[10px] text-muted-foreground font-normal">({item.name})</span>
                             </td>
                             <td className="p-3 text-right font-bold">{formatBalance(item.balance)}</td>
-                            <td className="p-3 text-right text-muted-foreground">${item.avgEntryPrice.toFixed(6)}</td>
-                            <td className="p-3 text-right" style={{ color: item.logoColor || "#22c55e" }}>${item.currentPrice.toFixed(6)}</td>
+                            <td className="p-3 text-right text-muted-foreground">${formatPrice(item.avgEntryPrice)}</td>
+                            <td className="p-3 text-right" style={{ color: item.logoColor || "#22c55e" }}>${formatPrice(item.currentPrice)}</td>
                             <td className="p-3 text-right font-bold">${item.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
                             <td className={`p-3 text-right font-semibold ${isHoldingPositiveRealized ? "text-primary" : "text-destructive"}`}>
                               {isHoldingPositiveRealized ? "+" : ""}${item.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -384,79 +750,297 @@ export function PortfolioPage() {
                 )}
               </CardContent>
             </Card>
+            {/* Smart Copytrading AA Wallet HUD */}
+            <Card className="border-border bg-card/45 backdrop-blur-md relative overflow-hidden">
+              {isDeploying && (
+                <div className="absolute inset-0 bg-background/95 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center">
+                  <div className="w-16 h-16 rounded-full border-2 border-primary/20 border-t-primary animate-spin mb-4" />
+                  <div className="font-mono text-xs uppercase tracking-widest text-primary animate-pulse space-y-1">
+                    <div>[INF] ACCESSING DEPLOYER FACTORY...</div>
+                    <div className="text-[10px] text-muted-foreground">[OK] GENERATING SMART DETERMINISTIC CONTEXT...</div>
+                    <div className="text-[10px] text-primary/70">[SYNC] BROADCASTING AA WALLET BYTECODE...</div>
+                  </div>
+                </div>
+              )}
+              
+              <CardHeader className="pb-3 border-b border-border/50">
+                <CardTitle className="font-mono text-xs uppercase tracking-widest text-primary flex items-center justify-between w-full">
+                  <span className="flex items-center gap-2">
+                    <WalletCards className="h-4 w-4 text-primary" />
+                    Account Abstraction (AA) Smart Wallet Console
+                  </span>
+                  {smartWallet?.isDeployed ? (
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                      🟢 ACTIVE & ARMED
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded">
+                      <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+                      ⚠️ NOT DEPLOYED
+                    </span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-border/60 rounded p-4 bg-card/25 space-y-3">
+                    <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">Smart Wallet Registry Address</div>
+                    <div className="font-mono text-xs text-foreground bg-black/40 p-2.5 rounded border border-border/40 select-all font-semibold break-all">
+                      {smartWallet?.smartWalletAddress || "Loading deterministic context..."}
+                    </div>
+                    {!smartWallet?.isDeployed ? (
+                      <Button
+                        onClick={handleDeployWallet}
+                        className="w-full text-black bg-primary hover:bg-primary/80 font-extrabold text-[11px] uppercase tracking-wider h-9"
+                      >
+                        Deploy Smart Wallet on-chain
+                      </Button>
+                    ) : (
+                      <div className="rounded border border-primary/20 bg-primary/5 p-2.5 font-mono text-[10px] text-primary text-center">
+                        ⚡ Deterministic AA Contract Fully Deployed.
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="border border-border/60 rounded p-4 bg-card/25 flex flex-col justify-between gap-3">
+                    <div>
+                      <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground mb-1">USDC Gas & Trading Balance</div>
+                      <div className="font-mono text-2xl font-black text-primary drop-shadow-[0_0_10px_rgba(34,197,94,0.2)]">
+                        ${smartWallet?.balanceUsdc?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"} <span className="text-xs font-normal text-muted-foreground">WUSDC</span>
+                      </div>
+                    </div>
+                    {smartWallet?.isDeployed ? (
+                      <div className="flex gap-2 items-center">
+                        <div className="relative flex-1">
+                          <span className="absolute left-2.5 top-2 text-[10px] text-muted-foreground font-mono">$</span>
+                          <input
+                            type="number"
+                            value={fundingAmount}
+                            onChange={(e) => setFundingAmount(e.target.value)}
+                            className="w-full h-8 pl-5 pr-2 rounded bg-black/40 border border-border/50 text-xs font-mono focus:border-primary/50 outline-none text-foreground"
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={handleFundWallet}
+                          className="h-8 text-black bg-primary hover:bg-primary/80 font-extrabold text-[10px] px-3 shrink-0"
+                        >
+                          Deposit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleWithdrawWallet}
+                          className="h-8 border-primary/30 hover:border-primary text-primary hover:bg-primary/10 font-extrabold text-[10px] px-3 shrink-0"
+                        >
+                          Withdraw
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="font-mono text-[10px] text-muted-foreground/80 italic">
+                        Deploy your smart wallet above to unlock trading deposit telemetry.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* Smart Money Copytrading System */}
+            {/* Smart Money Watchlist & Control HUD */}
             <Card className="border-border bg-card/45 backdrop-blur-md">
               <CardHeader className="pb-3 border-b border-border/50">
                 <CardTitle className="font-mono text-xs uppercase tracking-widest text-primary flex items-center gap-2">
                   <Award className="h-4 w-4 text-primary animate-pulse" />
-                  Smart Money Copytrading System
+                  Smart Money Copytrading Registry
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4 space-y-4">
-                <div className="rounded border border-primary/20 bg-primary/5 p-3 font-mono text-[10px] text-primary leading-relaxed">
-                  ⚠️ COPYTRADING COGNITIVE ENGINE IS ARMED. When any followed wallet executes a buy/sell trade on an Arc AMM pool, a simulated execution mirror will be processed according to your max allocation.
+                {/* Manual Target Addition Row */}
+                <div className="border border-primary/20 rounded bg-primary/5 p-3.5 flex flex-col sm:flex-row items-center gap-3">
+                  <div className="flex-1 w-full space-y-1">
+                    <label className="block font-mono text-[9px] uppercase tracking-widest text-primary">Manually Index Custom Target Address</label>
+                    <input
+                      type="text"
+                      placeholder="Enter 0x target trader address..."
+                      value={manualTargetAddress}
+                      onChange={(e) => setManualTargetAddress(e.target.value)}
+                      className="w-full h-8 px-2.5 rounded bg-black/50 border border-primary/30 text-xs font-mono text-foreground focus:border-primary outline-none placeholder:text-muted-foreground/50"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAddManualTarget}
+                    disabled={!manualTargetAddress}
+                    className="h-8 w-full sm:w-auto text-black bg-primary hover:bg-primary/80 font-extrabold text-[10px] uppercase tracking-wider px-5 shrink-0 self-end"
+                  >
+                    Add Target Wallet
+                  </Button>
                 </div>
 
-                {followedWallets.length === 0 ? (
-                  <div className="py-6 text-center text-muted-foreground text-xs uppercase font-semibold">
-                    No bookmarked smart money wallets. Visit the <Link href="/leaderboard" className="text-primary hover:underline">Arena Leaderboard</Link> to follow high-performing traders.
+                {!copytargets || copytargets.length === 0 ? (
+                  <div className="py-6 text-center text-muted-foreground text-xs uppercase font-semibold border border-border/60 rounded p-4 bg-card/10">
+                    No bookmarked smart money wallets. Visit the <Link href="/leaderboard" className="text-primary hover:underline">Arena Leaderboard</Link> to follow high-performing traders or enter any custom target address above.
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {followedWallets.map((addr) => {
+                    {copytargets.map((target: any) => {
+                      const isEditing = editingTarget === target.targetAddress;
                       return (
-                        <div key={addr} className="border border-border/60 rounded p-4 bg-card/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                          <div className="space-y-1.5 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
-                              <Link href={`/wallet/${addr}`} className="font-bold hover:text-primary transition-colors truncate block">
-                                {addr}
-                              </Link>
+                        <div
+                          key={target.targetAddress}
+                          className="border border-border/60 rounded p-4 bg-card/25 flex flex-col gap-4"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1.5 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full ${target.isActive === 1 ? "bg-primary animate-ping" : "bg-muted"}`} />
+                                <Link
+                                  href={`/wallet/${target.targetAddress}`}
+                                  className="font-bold hover:text-primary transition-colors truncate block text-xs"
+                                >
+                                  {target.targetAddress}
+                                </Link>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 font-mono">
+                                <span>Size Limit: <strong className="text-foreground">${target.allocationUsdc} USDC</strong></span>
+                                <span>Max Slippage: <strong className="text-foreground">{target.maxSlippage}%</strong></span>
+                                <span>Status: <strong className={target.isActive === 1 ? "text-primary" : "text-yellow-500"}>{target.isActive === 1 ? "ACTIVE & ARMED" : "DISARMED"}</strong></span>
+                              </div>
                             </div>
-                            <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
-                              <span>Allocation: <strong className="text-foreground">25 WUSDC</strong></span>
-                              <span>Max Slippage: <strong className="text-foreground">1.0%</strong></span>
-                              <span>Sim Closed Swaps: <strong className="text-primary">+4.20%</strong></span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const updated = followedWallets.filter(a => a !== addr);
-                                setFollowedWallets(updated);
-                                localStorage.setItem("followed_wallets", JSON.stringify(updated));
-                                toast({
-                                  title: "Stopped Copying",
-                                  description: `Disarmed copytrade allocation for ${formatAddress(addr)}.`,
-                                });
-                              }}
-                              className="h-8 border-destructive/30 hover:border-destructive hover:bg-destructive/10 text-destructive text-[10px]"
-                            >
-                              Disarm Copy
-                            </Button>
                             
-                            <Button
-                              size="sm"
-                              className="h-8 text-black bg-primary hover:bg-primary/80 font-extrabold text-[10px]"
-                              onClick={() => {
-                                toast({
-                                  title: "Allocation Reconfigured",
-                                  description: "Copytrade size increased by 50 WUSDC for optimal capture.",
-                                });
-                              }}
-                            >
-                              Configure Size
-                            </Button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleToggleTargetActive(target)}
+                                className={`h-8 font-mono text-[10px] px-3 ${target.isActive === 1 ? "border-yellow-500/30 hover:border-yellow-500 text-yellow-500 hover:bg-yellow-500/10" : "border-primary/30 hover:border-primary text-primary hover:bg-primary/10"}`}
+                              >
+                                {target.isActive === 1 ? "Disarm Auto" : "Arm Auto"}
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  if (isEditing) {
+                                    setEditingTarget(null);
+                                  } else {
+                                    setEditingTarget(target.targetAddress);
+                                    setEditAllocation(String(target.allocationUsdc));
+                                    setEditSlippage(String(target.maxSlippage));
+                                  }
+                                }}
+                                className="h-8 border-border text-muted-foreground hover:text-foreground text-[10px] px-3 font-mono"
+                              >
+                                {isEditing ? "Cancel" : "Configure"}
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDeleteTarget(target.targetAddress)}
+                                className="h-8 border-destructive/30 hover:border-destructive hover:bg-destructive/10 text-destructive text-[10px] px-3 font-mono"
+                              >
+                                Delete
+                              </Button>
+                            </div>
                           </div>
+
+                          {isEditing && (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-border/30 pt-3 font-mono text-xs">
+                              <div>
+                                <label className="block text-[10px] text-muted-foreground uppercase mb-1">Max Allocation size</label>
+                                <div className="relative">
+                                  <span className="absolute left-2 top-1.5 text-[10px] text-muted-foreground">$</span>
+                                  <input
+                                    type="number"
+                                    value={editAllocation}
+                                    onChange={(e) => setEditAllocation(e.target.value)}
+                                    className="w-full h-8 pl-4 pr-2 rounded bg-black/40 border border-border/50 text-xs text-foreground focus:border-primary/50 outline-none"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-muted-foreground uppercase mb-1">Slippage threshold</label>
+                                <div className="relative">
+                                  <span className="absolute right-2 top-1.5 text-[10px] text-muted-foreground">%</span>
+                                  <input
+                                    type="number"
+                                    value={editSlippage}
+                                    step="0.1"
+                                    onChange={(e) => setEditSlippage(e.target.value)}
+                                    className="w-full h-8 pl-2 pr-4 rounded bg-black/40 border border-border/50 text-xs text-foreground focus:border-primary/50 outline-none"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-end">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleSaveTargetSettings(target.targetAddress)}
+                                  className="w-full h-8 text-black bg-primary hover:bg-primary/80 font-extrabold text-[10px] uppercase tracking-wider"
+                                >
+                                  Save Configuration
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Scrolling Cyber Relayer Dispatch Console Logs */}
+            <Card className="border-border bg-card/45 backdrop-blur-md">
+              <CardHeader className="pb-3 border-b border-border/50">
+                <CardTitle className="font-mono text-xs uppercase tracking-widest text-primary flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary animate-pulse" />
+                  Automated Relayer Dispatcher Audits
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="bg-black/85 font-mono text-[10px] text-primary p-4 h-[240px] overflow-y-auto space-y-2.5 leading-relaxed border-b border-border/30 select-none hide-scrollbar">
+                  {!copylogs || copylogs.length === 0 ? (
+                    <div className="text-muted-foreground text-center py-12 italic">
+                      [SYS] Relayer dispatcher initialized. Awaiting on-chain swap events on indexed target addresses...
+                    </div>
+                  ) : (
+                    [...copylogs].reverse().map((log: any, idx: number) => {
+                      const timeStr = new Date(log.timestamp).toLocaleTimeString();
+                      return (
+                        <div key={log.id || idx} className="space-y-1 border-b border-border/10 pb-2">
+                          <div className="flex items-center justify-between text-[9px] text-muted-foreground">
+                            <span>[{timeStr}] INT BLOCK CAPTURE</span>
+                            <span className="text-primary/60">TARGET TX: {formatAddress(log.targetTxHash)}</span>
+                          </div>
+                          <div className="text-foreground">
+                            [OK] Target <span className="text-yellow-400 font-bold">{formatAddress(log.targetAddress)}</span> executed <span className={log.side === "buy" ? "text-primary" : "text-destructive"}>{log.side.toUpperCase()}</span> swap of <strong className="text-foreground">{formatBalance(log.targetAmount)}</strong> tokens.
+                          </div>
+                          {log.status === "success" ? (
+                            <div className="text-primary flex flex-wrap items-center gap-x-2">
+                              <span>⚡ Paymaster sponsored gas. Status: [SUCCESS]</span>
+                              <span>· Mirrored swap: {formatBalance(log.mirrorAmount)} tokens @ ${formatPrice(log.mirrorPrice)}</span>
+                              <a
+                                href={`https://testnet.arcscan.app/tx/${log.mirrorTxHash}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary hover:underline hover:text-primary/80 font-bold ml-auto flex items-center gap-0.5"
+                              >
+                                [VIEW RX] <ArrowUpRight className="w-3 h-3" />
+                              </a>
+                            </div>
+                          ) : (
+                            <div className="text-destructive font-bold uppercase">
+                              ⚠️ Status: [MIRROR FAILURE] - {log.error || "Unknown execution slip"}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -504,7 +1088,7 @@ export function PortfolioPage() {
                             <span className="font-bold text-foreground/80">${formatBalance(trade.wusdcAmount)}</span>
                           </div>
                           <div className="flex justify-between items-center text-[9px] text-muted-foreground/60 mt-1.5 group-hover:text-muted-foreground transition-colors">
-                            <span>Price: ${Number(trade.executionPrice).toFixed(6)}</span>
+                            <span>Price: ${formatPrice(trade.executionPrice)}</span>
                             <span>Tx: {formatAddress(trade.txHash)}</span>
                           </div>
                         </a>

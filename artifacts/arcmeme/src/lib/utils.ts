@@ -26,3 +26,22 @@ export function formatAddress(address: string): string {
   if (!address || address.length < 12) return address;
   return address.slice(0, 8) + "..." + address.slice(-4);
 }
+
+export function formatPrice(price: number | string): string {
+  const num = typeof price === "number" ? price : Number(price);
+  if (!Number.isFinite(num) || num === 0) return "0.00";
+  if (num >= 1) {
+    return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  }
+  if (num >= 0.0001) {
+    return num.toFixed(6);
+  }
+  const str = num.toFixed(12);
+  const match = str.match(/^0\.(0+)/);
+  if (match) {
+    const zeroCount = match[1].length;
+    const precision = Math.min(zeroCount + 4, 12);
+    return num.toFixed(precision);
+  }
+  return num.toFixed(10);
+}

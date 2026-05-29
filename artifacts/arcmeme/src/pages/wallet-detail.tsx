@@ -21,6 +21,7 @@ import {
 import { Link } from "wouter";
 import { useState } from "react";
 import { formatAddress } from "@/lib/utils";
+import { useWallet } from "@/hooks/use-wallet";
 
 type WalletHoldings = {
   tokenId: string;
@@ -59,6 +60,7 @@ type WalletAnalytics = {
 export function WalletDetailPage() {
   const { address } = useParams<{ address: string }>();
   const { toast } = useToast();
+  const { state: walletState } = useWallet();
   const [copied, setCopied] = useState(false);
   const [followedWallets, setFollowedWallets] = useState<string[]>(() => {
     try {
@@ -92,17 +94,44 @@ export function WalletDetailPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleFollowToggle = () => {
+  const handleFollowToggle = async () => {
     if (!address) return;
+    const userAddr = walletState.status === "connected" ? walletState.address : null;
+
     let updated: string[];
     if (isFollowed) {
       updated = followedWallets.filter(a => a !== address);
+      if (userAddr) {
+        try {
+          await fetch(`/api/copytrade/targets/${userAddr}/${address}`, {
+            method: "DELETE",
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      }
       toast({
         title: "Wallet Unfollowed",
         description: `Removed ${formatAddress(address)} from copytrade watch.`,
       });
     } else {
       updated = [...followedWallets, address];
+      if (userAddr) {
+        try {
+          await fetch(`/api/copytrade/targets/${userAddr}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetAddress: address,
+              allocationUsdc: 25.0,
+              maxSlippage: 1.0,
+              isActive: 1,
+            }),
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      }
       toast({
         title: "Wallet Bookmarked",
         description: `Now following ${formatAddress(address)} for copytrade events!`,

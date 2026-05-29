@@ -103,6 +103,8 @@ export function LaunchPage() {
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isOneClick, setIsOneClick] = useState(true);
+  const [oneClickWusdcAmount, setOneClickWusdcAmount] = useState("50");
 
   const connectedAddress =
     walletState.status === "connected" ? walletState.address : undefined;
@@ -171,7 +173,7 @@ export function LaunchPage() {
         },
       },
       {
-        onSuccess: (token) => {
+        onSuccess: async (token) => {
           const newestQueryKey = getListTokensQueryKey({
             sort: ListTokensSort.newest,
             limit: 50,
@@ -197,16 +199,49 @@ export function LaunchPage() {
           queryClient.invalidateQueries({ queryKey: getGetTrendingTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetPlatformStatsQueryKey() });
           setLaunchedToken(token);
-          setLiquidityTokenAmount(String(Math.max(Math.floor(token.totalSupply * 0.1), 1)));
-          setLiquidityUsdcAmount("1");
-          resetLiquidity();
-          setSuccess(true);
-          toast({
-            title: "Token Launched!",
-            description: contractAddress
-              ? "ERC20 deployed. Create a TOKEN/WUSDC pool to make it tradeable."
-              : "Token saved. Connect MetaMask to deploy on-chain next time.",
-          });
+          
+          const defaultTokenAmt = String(Math.max(Math.floor(token.totalSupply * 0.1), 1));
+          setLiquidityTokenAmount(defaultTokenAmt);
+          setLiquidityUsdcAmount(oneClickWusdcAmount);
+
+          if (isOneClick && contractAddress) {
+            setSuccess(true);
+            toast({
+              title: "Token Metadata Saved!",
+              description: "ERC20 deployed and registered. Initializing automated pool creation...",
+            });
+
+            // Automatically trigger creation of ApexiSwap pool on-chain
+            try {
+              const updatedToken = await createLiquidityPool({
+                token,
+                tokenAmount: defaultTokenAmt,
+                wusdcAmount: oneClickWusdcAmount,
+              });
+
+              if (updatedToken) {
+                setLaunchedToken(updatedToken);
+                queryClient.setQueryData<Token>(getGetTokenQueryKey(updatedToken.id), updatedToken);
+                queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
+                queryClient.invalidateQueries({ queryKey: getGetTrendingTokensQueryKey() });
+                toast({
+                  title: "1-Click Launch Succeeded!",
+                  description: `Seeded ${updatedToken.ticker}/WUSDC LP pool on ApexiSwap. Active now!`,
+                });
+              }
+            } catch (err) {
+              console.error("[1-click] Seeding failed:", err);
+            }
+          } else {
+            resetLiquidity();
+            setSuccess(true);
+            toast({
+              title: "Token Launched!",
+              description: contractAddress
+                ? "ERC20 deployed. Create a TOKEN/WUSDC pool to make it tradeable."
+                : "Token saved. Connect MetaMask to deploy on-chain next time.",
+            });
+          }
         },
         onError: (error) => {
           console.error("[launch] Failed to save token metadata", error);
@@ -276,9 +311,19 @@ export function LaunchPage() {
           animate={{ scale: 1, opacity: 1 }}
           className="mb-6 flex justify-center"
         >
-          <CheckCircle className="h-16 w-16 text-primary" />
+          {marketReady ? (
+            <CheckCircle className="h-16 w-16 text-primary" />
+          ) : isOneClick && liquidityStatus.status === "error" ? (
+            <div className="w-16 h-16 rounded-full border-2 border-destructive flex items-center justify-center text-destructive font-extrabold text-2xl select-none">✕</div>
+          ) : isOneClick ? (
+            <Loader2 className="h-16 w-16 text-primary animate-spin" />
+          ) : (
+            <CheckCircle className="h-16 w-16 text-primary" />
+          )}
         </motion.div>
-        <h1 className="text-4xl font-bold uppercase tracking-tight text-primary mb-2">It's Live.</h1>
+        <h1 className="text-4xl font-bold uppercase tracking-tight text-primary mb-2">
+          {marketReady ? "Launch Complete." : isOneClick ? "Launching..." : "It's Live."}
+        </h1>
         {deployedContractAddress ? (
           <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-xl max-w-md w-full text-left space-y-2">
             <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold">ERC20 Contract Deployed</div>
@@ -299,68 +344,141 @@ export function LaunchPage() {
 
         {deployedContractAddress && launchedToken && !marketReady && (
           <div className="mt-6 p-4 bg-card border border-border rounded-xl max-w-md w-full text-left space-y-4">
-            <div>
-              <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Create Liquidity Pool</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Seed an ApexiSwap {launchedToken.ticker}/WUSDC pool so ArcMeme can track real reserves and market status.
-              </p>
-            </div>
+            {isOneClick ? (
+              <>
+                <div>
+                  <div className="text-xs text-primary uppercase tracking-wider font-extrabold flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+                    Automated LP Seeding Sequence
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Auto-deploying pair and seeding liquidity pool. Confirm MetaMask popups when prompted.
+                  </p>
+                </div>
+                
+                <div className="rounded-xl border border-primary/20 bg-black/45 p-4 space-y-2.5 font-mono text-[10px]">
+                  {[
+                    { key: "switching-network", label: "Switching to Arc Testnet" },
+                    { key: "confirming", label: "Confirm ERC20 MetaMask Prompt" },
+                    { key: "deploying", label: "Mining ERC20 Contract" },
+                    { key: "saving", label: "Registering Token Metadata" },
+                    { key: "detecting-pair", label: "Creating ApexiSwap LP Pair" },
+                    { key: "wrapping-usdc", label: "Wrapping Native USDC to WUSDC" },
+                    { key: "approving", label: "Authorizing AMM Allowance" },
+                    { key: "adding-liquidity", label: "Seeding reserve LP balances" },
+                    { key: "saving-market", label: "Activating real-time indexing" },
+                  ].map((step) => {
+                    let activeKey = "idle";
+                    if (deployStatus.status !== "idle" && deployStatus.status !== "success" && deployStatus.status !== "error") {
+                      activeKey = deployStatus.status === "retrying" ? "deploying" : deployStatus.status;
+                    } else if (launchToken.isPending) {
+                      activeKey = "saving";
+                    } else if (liquidityStatus.status !== "idle" && liquidityStatus.status !== "success" && liquidityStatus.status !== "error") {
+                      activeKey = liquidityStatus.status;
+                    } else if (liquidityStatus.status === "success") {
+                      activeKey = "saving-market";
+                    }
 
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  {launchedToken.ticker}
-                </span>
-                <Input
-                  type="number"
-                  min="0"
-                  value={liquidityTokenAmount}
-                  onChange={(event) => setLiquidityTokenAmount(event.target.value)}
-                  className="font-mono bg-background/60"
-                  disabled={isCreatingLiquidity}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">WUSDC</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.001"
-                  value={liquidityUsdcAmount}
-                  onChange={(event) => setLiquidityUsdcAmount(event.target.value)}
-                  className="font-mono bg-background/60"
-                  disabled={isCreatingLiquidity}
-                />
-              </label>
-            </div>
+                    const stepsOrder = [
+                      "switching-network", "confirming", "deploying", "saving",
+                      "detecting-pair", "wrapping-usdc", "approving", "adding-liquidity", "saving-market"
+                    ];
+                    
+                    const currentOrder = stepsOrder.indexOf(activeKey);
+                    const stepOrder = stepsOrder.indexOf(step.key);
 
-            <div className="text-[10px] text-muted-foreground font-mono space-y-1">
-              <div>Router: {amm.routerAddress.slice(0, 8)}...{amm.routerAddress.slice(-6)}</div>
-              <div>Factory: {amm.factoryAddress.slice(0, 8)}...{amm.factoryAddress.slice(-6)}</div>
-              <div>Each step opens MetaMask when a signature is needed.</div>
-            </div>
+                    const isDone = stepOrder < currentOrder;
+                    const isCurrent = stepOrder === currentOrder;
 
-            {liquidityStatus.status === "error" && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
-                {liquidityStatus.message}
-              </div>
+                    return (
+                      <div key={step.key} className={`flex items-center gap-3 transition-opacity ${isDone || isCurrent ? "opacity-100" : "opacity-35"}`}>
+                        {isDone ? (
+                          <CheckCircle className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                        ) : isCurrent ? (
+                          <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin text-primary" />
+                        ) : (
+                          <span className="w-3.5 h-3.5 rounded-full border border-border flex-shrink-0" />
+                        )}
+                        <span className={isCurrent ? "text-primary font-bold animate-pulse" : isDone ? "text-muted-foreground line-through" : "text-muted-foreground"}>
+                          {step.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {liquidityStatus.status === "error" && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
+                    {liquidityStatus.message}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Create Liquidity Pool</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Seed an ApexiSwap {launchedToken.ticker}/WUSDC pool so ArcMeme can track real reserves and market status.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                      {launchedToken.ticker}
+                    </span>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={liquidityTokenAmount}
+                      onChange={(event) => setLiquidityTokenAmount(event.target.value)}
+                      className="font-mono bg-background/60"
+                      disabled={isCreatingLiquidity}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">WUSDC</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={liquidityUsdcAmount}
+                      onChange={(event) => setLiquidityUsdcAmount(event.target.value)}
+                      className="font-mono bg-background/60"
+                      disabled={isCreatingLiquidity}
+                    />
+                  </label>
+                </div>
+
+                <div className="text-[10px] text-muted-foreground font-mono space-y-1">
+                  <div>Router: {amm.routerAddress.slice(0, 8)}...{amm.routerAddress.slice(-6)}</div>
+                  <div>Factory: {amm.factoryAddress.slice(0, 8)}...{amm.factoryAddress.slice(-6)}</div>
+                  <div>Each step opens MetaMask when a signature is needed.</div>
+                </div>
+
+                {liquidityStatus.status === "error" && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive font-mono">
+                    {liquidityStatus.message}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  className="w-full font-bold text-black"
+                  disabled={isCreatingLiquidity || !liquidityTokenAmount || !liquidityUsdcAmount}
+                  onClick={handleCreateLiquidity}
+                >
+                  {isCreatingLiquidity ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {liquidityStepLabel}
+                    </span>
+                  ) : (
+                    liquidityStepLabel
+                  )}
+                </Button>
+              </>
             )}
-
-            <Button
-              type="button"
-              className="w-full font-bold text-black"
-              disabled={isCreatingLiquidity || !liquidityTokenAmount || !liquidityUsdcAmount}
-              onClick={handleCreateLiquidity}
-            >
-              {isCreatingLiquidity ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {liquidityStepLabel}
-                </span>
-              ) : (
-                liquidityStepLabel
-              )}
-            </Button>
           </div>
         )}
 
@@ -633,25 +751,40 @@ export function LaunchPage() {
             </div>
 
             {/* Deploy step progress (shown during launch) */}
-            {isLaunching && (
+            {(isLaunching || isCreatingLiquidity) && (
               <div className="rounded-xl border border-border bg-card/60 p-4 space-y-2.5">
                 {[
                   { key: "switching-network", label: "Switching to Arc Testnet" },
-                  { key: "confirming", label: "Confirm in MetaMask" },
-                  { key: "deploying", label: "Mining transaction" },
-                  { key: "saving", label: "Saving token metadata" },
+                  { key: "confirming", label: "Confirm ERC20 MetaMask Prompt" },
+                  { key: "deploying", label: "Mining ERC20 Contract" },
+                  { key: "saving", label: "Registering Token Metadata" },
+                  ...(isOneClick ? [
+                    { key: "detecting-pair", label: "Creating ApexiSwap LP Pair" },
+                    { key: "wrapping-usdc", label: "Wrapping Native USDC to WUSDC" },
+                    { key: "approving", label: "Authorizing AMM Allowance" },
+                    { key: "adding-liquidity", label: "Seeding reserve LP balances" },
+                    { key: "saving-market", label: "Activating real-time indexing" },
+                  ] : [])
                 ].map((step) => {
-                  const statusOrder = ["switching-network", "confirming", "deploying", "saving"];
+                  let activeStatus = "idle";
                   const isRetrying = deployStatus.status === "retrying";
-                  const activeStatus = isRetrying
-                    ? (deployStatus as { step: string }).step.toLowerCase().includes("network")
-                      ? "switching-network"
-                      : "deploying"
-                    : deployStatus.status;
-                  const currentOrder = launchToken.isPending
-                    ? statusOrder.indexOf("saving")
-                    : statusOrder.indexOf(activeStatus);
-                  const stepOrder = statusOrder.indexOf(step.key);
+                  
+                  if (deployStatus.status !== "idle" && deployStatus.status !== "success" && deployStatus.status !== "error") {
+                    activeStatus = isRetrying ? "deploying" : deployStatus.status;
+                  } else if (launchToken.isPending) {
+                    activeStatus = "saving";
+                  } else if (liquidityStatus.status !== "idle" && liquidityStatus.status !== "success" && liquidityStatus.status !== "error") {
+                    activeStatus = liquidityStatus.status;
+                  } else if (liquidityStatus.status === "success") {
+                    activeStatus = "saving-market";
+                  }
+
+                  const stepsOrder = [
+                    "switching-network", "confirming", "deploying", "saving",
+                    "detecting-pair", "wrapping-usdc", "approving", "adding-liquidity", "saving-market"
+                  ];
+                  const currentOrder = stepsOrder.indexOf(activeStatus);
+                  const stepOrder = stepsOrder.indexOf(step.key);
                   const isDone = stepOrder < currentOrder;
                   const isCurrent = stepOrder === currentOrder;
                   const isRetryingThisStep = isRetrying && isCurrent;
@@ -665,7 +798,7 @@ export function LaunchPage() {
                       ) : (
                         <span className="w-4 h-4 rounded-full border border-border flex-shrink-0" />
                       )}
-                      <span className={isCurrent ? "text-foreground" : isDone ? "text-muted-foreground line-through" : "text-muted-foreground"}>
+                      <span className={isCurrent ? "text-foreground font-bold" : isDone ? "text-muted-foreground line-through" : "text-muted-foreground"}>
                         {step.label}
                         {isRetryingThisStep && (
                           <span className="ml-2 text-yellow-400 text-[10px] font-bold">
@@ -736,21 +869,66 @@ export function LaunchPage() {
               </div>
             )}
 
+            {/* 1-Click LP Seeding Toggle */}
+            {hasMetaMask && walletState.status === "connected" && (
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3 font-mono">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+                      1-Click LP Launchpad
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Auto-seeds ApexiSwap TOKEN/WUSDC pool instantly.</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isOneClick}
+                    onChange={(e) => setIsOneClick(e.target.checked)}
+                    className="w-4 h-4 rounded border-primary bg-black accent-primary cursor-pointer"
+                  />
+                </div>
+                {isOneClick && (
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-primary/10">
+                    <label className="space-y-1">
+                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">WUSDC Seed Deposit</span>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="1000"
+                        value={oneClickWusdcAmount}
+                        onChange={(e) => setOneClickWusdcAmount(e.target.value)}
+                        className="h-8 font-mono bg-black/40 border-primary/20 text-xs focus:border-primary text-primary"
+                        disabled={isLaunching || isCreatingLiquidity}
+                      />
+                    </label>
+                    <div className="flex flex-col justify-end text-[8px] text-muted-foreground leading-relaxed">
+                      <div>• Seeds 10% of total supply as reserves.</div>
+                      <div>• Deducts WUSDC from MetaMask.</div>
+                      <div>• Zero manual setup.</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <Button
               type="submit"
               className="w-full h-12 text-lg font-bold uppercase tracking-widest text-black"
-              disabled={isLaunching}
+              disabled={isLaunching || isCreatingLiquidity}
             >
-              {isLaunching ? (
+              {isLaunching || isCreatingLiquidity ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   {deployStatus.status === "switching-network" && "Switching Network..."}
                   {deployStatus.status === "confirming" && "Waiting for MetaMask..."}
                   {deployStatus.status === "deploying" && "Mining..."}
                   {deployStatus.status === "retrying" && `Retrying ${(deployStatus as { step: string }).step}...`}
-                  {(deployStatus.status === "idle" || deployStatus.status === "success") && launchToken.isPending && "Saving..."}
+                  {isCreatingLiquidity && "Seeding Pool..."}
+                  {(deployStatus.status === "idle" || deployStatus.status === "success") && !isCreatingLiquidity && launchToken.isPending && "Saving..."}
                 </span>
-              ) : hasMetaMask && walletState.status === "connected" ? "Deploy ERC20 + Launch" : "Save Token"}
+              ) : hasMetaMask && walletState.status === "connected" ? (
+                isOneClick ? "1-Click Deploy + Seeding LP" : "Deploy ERC20 + Launch"
+              ) : "Save Token"}
             </Button>
           </form>
         </Form>

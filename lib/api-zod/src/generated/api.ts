@@ -229,7 +229,7 @@ export const getTokenCandlesQueryIntervalDefault = `1m`;
 
 export const GetTokenCandlesQueryParams = zod.object({
   interval: zod
-    .enum(["1m", "5m", "15m", "1h", "4h"])
+    .enum(["1m", "5m", "15m", "1h", "4h", "1d"])
     .default(getTokenCandlesQueryIntervalDefault),
 });
 

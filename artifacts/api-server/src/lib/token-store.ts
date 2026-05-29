@@ -50,7 +50,7 @@ export type Trade = {
   timestamp: string;
 };
 
-export type CandleInterval = "1m" | "5m" | "15m" | "1h" | "4h";
+export type CandleInterval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
 export type Candle = {
   time: number;
@@ -445,8 +445,45 @@ db.exec(`
     UNIQUE(tokenId, commentId, userAddress, emoji)
   );
 
+  CREATE TABLE IF NOT EXISTS copytrade_wallets (
+    address TEXT PRIMARY KEY,
+    smartWalletAddress TEXT NOT NULL,
+    balanceUsdc REAL NOT NULL DEFAULT 0,
+    isDeployed INTEGER NOT NULL DEFAULT 0,
+    isActive INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS copytrade_targets (
+    ownerAddress TEXT NOT NULL,
+    targetAddress TEXT NOT NULL,
+    allocationUsdc REAL NOT NULL DEFAULT 25.0,
+    maxSlippage REAL NOT NULL DEFAULT 1.0,
+    isActive INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT NOT NULL,
+    PRIMARY KEY (ownerAddress, targetAddress)
+  );
+
+  CREATE TABLE IF NOT EXISTS copytrade_actions (
+    id TEXT PRIMARY KEY,
+    ownerAddress TEXT NOT NULL,
+    targetAddress TEXT NOT NULL,
+    targetTxHash TEXT NOT NULL,
+    tokenId TEXT NOT NULL,
+    side TEXT NOT NULL,
+    targetAmount REAL NOT NULL,
+    mirrorAmount REAL NOT NULL,
+    mirrorPrice REAL NOT NULL,
+    mirrorTxHash TEXT NOT NULL,
+    status TEXT NOT NULL,
+    error TEXT,
+    timestamp TEXT NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS comments_tokenId_idx ON comments(tokenId);
   CREATE INDEX IF NOT EXISTS reactions_tokenId_commentId_idx ON reactions(tokenId, commentId);
+  CREATE INDEX IF NOT EXISTS copytrade_targets_owner_idx ON copytrade_targets(ownerAddress);
+  CREATE INDEX IF NOT EXISTS copytrade_actions_owner_idx ON copytrade_actions(ownerAddress);
 `);
 
 const tokenColumns = `
@@ -795,6 +832,7 @@ const candleIntervalSeconds: Record<CandleInterval, number> = {
   "15m": 15 * 60,
   "1h": 60 * 60,
   "4h": 4 * 60 * 60,
+  "1d": 24 * 60 * 60,
 };
 
 export function isCandleInterval(value: unknown): value is CandleInterval {
@@ -1357,5 +1395,276 @@ export function getWalletAnalytics(address: string) {
       holdings: isMock ? mockData.holdings : [],
       trades: [],
     };
+  }
+}
+
+// --- Smart Copytrading Wallets, Targets, and Actions Interfaces & Helpers ---
+
+export type CopytradeWallet = {
+  address: string;
+  smartWalletAddress: string;
+  balanceUsdc: number;
+  isDeployed: number;
+  isActive: number;
+  createdAt: string;
+};
+
+export type CopytradeTarget = {
+  ownerAddress: string;
+  targetAddress: string;
+  allocationUsdc: number;
+  maxSlippage: number;
+  isActive: number;
+  createdAt: string;
+};
+
+export type CopytradeAction = {
+  id: string;
+  ownerAddress: string;
+  targetAddress: string;
+  targetTxHash: string;
+  tokenId: string;
+  side: "buy" | "sell";
+  targetAmount: number;
+  mirrorAmount: number;
+  mirrorPrice: number;
+  mirrorTxHash: string;
+  status: "success" | "failed" | "pending";
+  error: string | null;
+  timestamp: string;
+};
+
+import crypto from "node:crypto";
+import { Wallet } from "ethers";
+
+export function getDeterministicSmartWalletAddress(ownerAddress: string): string {
+  const hash = crypto.createHash("sha256").update(`arc.smartwallet.v1.${ownerAddress.toLowerCase()}`).digest("hex");
+  const privateKey = "0x" + hash;
+  const wallet = new Wallet(privateKey);
+  return wallet.address.toLowerCase();
+}
+
+export function getSmartWallet(address: string): CopytradeWallet | null {
+  const addrLower = address.toLowerCase();
+  try {
+    const row = db.prepare("SELECT * FROM copytrade_wallets WHERE LOWER(address) = ?").get(addrLower) as any;
+    if (!row) return null;
+
+    // Self-heal stale database records from previous sessions
+    const correctAddress = getDeterministicSmartWalletAddress(addrLower);
+    if (row.smartWalletAddress.toLowerCase() !== correctAddress.toLowerCase()) {
+      db.prepare(`
+        UPDATE copytrade_wallets
+        SET smartWalletAddress = ?
+        WHERE LOWER(address) = ?
+      `).run(correctAddress, addrLower);
+      row.smartWalletAddress = correctAddress;
+    }
+
+    return {
+      address: row.address,
+      smartWalletAddress: row.smartWalletAddress,
+      balanceUsdc: Number(row.balanceUsdc),
+      isDeployed: Number(row.isDeployed),
+      isActive: Number(row.isActive),
+      createdAt: row.createdAt,
+    };
+  } catch (err) {
+    logger.error({ err, address }, "Failed to getSmartWallet");
+    return null;
+  }
+}
+
+export function deploySmartWallet(address: string, smartWalletAddress: string): CopytradeWallet {
+  const addrLower = address.toLowerCase();
+  const smartLower = smartWalletAddress.toLowerCase();
+  const now = new Date().toISOString();
+  
+  const existing = getSmartWallet(addrLower);
+  if (existing) {
+    db.prepare(`
+      UPDATE copytrade_wallets
+      SET isDeployed = 1, isActive = 1, smartWalletAddress = ?
+      WHERE LOWER(address) = ?
+    `).run(smartLower, addrLower);
+    return { ...existing, isDeployed: 1, isActive: 1, smartWalletAddress: smartLower };
+  }
+
+  db.prepare(`
+    INSERT INTO copytrade_wallets (address, smartWalletAddress, balanceUsdc, isDeployed, isActive, createdAt)
+    VALUES (?, ?, 100.0, 1, 1, ?)
+  `).run(addrLower, smartLower, now);
+
+  return {
+    address: addrLower,
+    smartWalletAddress: smartLower,
+    balanceUsdc: 100.0,
+    isDeployed: 1,
+    isActive: 1,
+    createdAt: now,
+  };
+}
+
+export function updateSmartWalletBalance(address: string, amount: number): number {
+  const addrLower = address.toLowerCase();
+  const wallet = getSmartWallet(addrLower);
+  if (!wallet) return 0;
+
+  const newBalance = Math.max(0, wallet.balanceUsdc + amount);
+  db.prepare(`
+    UPDATE copytrade_wallets
+    SET balanceUsdc = ?
+    WHERE LOWER(address) = ?
+  `).run(newBalance, addrLower);
+
+  return newBalance;
+}
+
+export function listCopytradeTargets(ownerAddress: string): CopytradeTarget[] {
+  const ownerLower = ownerAddress.toLowerCase();
+  try {
+    const rows = db.prepare("SELECT * FROM copytrade_targets WHERE LOWER(ownerAddress) = ?").all(ownerLower) as any[];
+    return rows.map(r => ({
+      ownerAddress: r.ownerAddress,
+      targetAddress: r.targetAddress,
+      allocationUsdc: Number(r.allocationUsdc),
+      maxSlippage: Number(r.maxSlippage),
+      isActive: Number(r.isActive),
+      createdAt: r.createdAt,
+    }));
+  } catch (err) {
+    logger.error({ err, ownerAddress }, "Failed to listCopytradeTargets");
+    return [];
+  }
+}
+
+export function getCopytradeTarget(ownerAddress: string, targetAddress: string): CopytradeTarget | null {
+  const ownerLower = ownerAddress.toLowerCase();
+  const targetLower = targetAddress.toLowerCase();
+  try {
+    const row = db.prepare("SELECT * FROM copytrade_targets WHERE LOWER(ownerAddress) = ? AND LOWER(targetAddress) = ?").get(ownerLower, targetLower) as any;
+    if (!row) return null;
+    return {
+      ownerAddress: row.ownerAddress,
+      targetAddress: row.targetAddress,
+      allocationUsdc: Number(row.allocationUsdc),
+      maxSlippage: Number(row.maxSlippage),
+      isActive: Number(row.isActive),
+      createdAt: row.createdAt,
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+export function setCopytradeTarget(
+  ownerAddress: string,
+  targetAddress: string,
+  allocationUsdc: number,
+  maxSlippage: number,
+  isActive: number
+): CopytradeTarget {
+  const ownerLower = ownerAddress.toLowerCase();
+  const targetLower = targetAddress.toLowerCase();
+  const now = new Date().toISOString();
+
+  const existing = getCopytradeTarget(ownerLower, targetLower);
+  if (existing) {
+    db.prepare(`
+      UPDATE copytrade_targets
+      SET allocationUsdc = ?, maxSlippage = ?, isActive = ?
+      WHERE LOWER(ownerAddress) = ? AND LOWER(targetAddress) = ?
+    `).run(allocationUsdc, maxSlippage, isActive, ownerLower, targetLower);
+    return {
+      ownerAddress: ownerLower,
+      targetAddress: targetLower,
+      allocationUsdc,
+      maxSlippage,
+      isActive,
+      createdAt: existing.createdAt,
+    };
+  }
+
+  db.prepare(`
+    INSERT INTO copytrade_targets (ownerAddress, targetAddress, allocationUsdc, maxSlippage, isActive, createdAt)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(ownerLower, targetLower, allocationUsdc, maxSlippage, isActive, now);
+
+  return {
+    ownerAddress: ownerLower,
+    targetAddress: targetLower,
+    allocationUsdc,
+    maxSlippage,
+    isActive,
+    createdAt: now,
+  };
+}
+
+export function removeCopytradeTarget(ownerAddress: string, targetAddress: string): boolean {
+  const ownerLower = ownerAddress.toLowerCase();
+  const targetLower = targetAddress.toLowerCase();
+  try {
+    const result = db.prepare("DELETE FROM copytrade_targets WHERE LOWER(ownerAddress) = ? AND LOWER(targetAddress) = ?").run(ownerLower, targetLower);
+    return Number(result.changes) > 0;
+  } catch (err) {
+    logger.error({ err, ownerAddress, targetAddress }, "Failed to removeCopytradeTarget");
+    return false;
+  }
+}
+
+export function listCopytradeActions(ownerAddress: string): CopytradeAction[] {
+  const ownerLower = ownerAddress.toLowerCase();
+  try {
+    const rows = db.prepare("SELECT * FROM copytrade_actions WHERE LOWER(ownerAddress) = ? ORDER BY datetime(timestamp) DESC LIMIT 100").all(ownerLower) as any[];
+    return rows.map(r => ({
+      id: r.id,
+      ownerAddress: r.ownerAddress,
+      targetAddress: r.targetAddress,
+      targetTxHash: r.targetTxHash,
+      tokenId: r.tokenId,
+      side: r.side === "sell" ? "sell" : "buy",
+      targetAmount: Number(r.targetAmount),
+      mirrorAmount: Number(r.mirrorAmount),
+      mirrorPrice: Number(r.mirrorPrice),
+      mirrorTxHash: r.mirrorTxHash,
+      status: r.status as any,
+      error: r.error,
+      timestamp: r.timestamp,
+    }));
+  } catch (err) {
+    logger.error({ err, ownerAddress }, "Failed to listCopytradeActions");
+    return [];
+  }
+}
+
+export function saveCopytradeAction(action: CopytradeAction): boolean {
+  try {
+    db.prepare(`
+      INSERT OR REPLACE INTO copytrade_actions (
+        id, ownerAddress, targetAddress, targetTxHash, tokenId, side,
+        targetAmount, mirrorAmount, mirrorPrice, mirrorTxHash, status, error, timestamp
+      ) VALUES (
+        $id, $ownerAddress, $targetAddress, $targetTxHash, $tokenId, $side,
+        $targetAmount, $mirrorAmount, $mirrorPrice, $mirrorTxHash, $status, $error, $timestamp
+      )
+    `).run({
+      $id: action.id,
+      $ownerAddress: action.ownerAddress.toLowerCase(),
+      $targetAddress: action.targetAddress.toLowerCase(),
+      $targetTxHash: action.targetTxHash,
+      $tokenId: action.tokenId,
+      $side: action.side,
+      $targetAmount: action.targetAmount,
+      $mirrorAmount: action.mirrorAmount,
+      $mirrorPrice: action.mirrorPrice,
+      $mirrorTxHash: action.mirrorTxHash,
+      $status: action.status,
+      $error: action.error,
+      $timestamp: action.timestamp,
+    });
+    return true;
+  } catch (err) {
+    logger.error({ err, action }, "Failed to saveCopytradeAction");
+    return false;
   }
 }

@@ -15,6 +15,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",
+    "ethers": "^6.16.0",
     "express": "^5",
     "pino": "^9",
     "pino-http": "^10"

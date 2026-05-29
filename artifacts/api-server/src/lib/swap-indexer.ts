@@ -1,6 +1,8 @@
 import { getLatestTradeBlock, saveTrades, type Token, type Trade } from "./token-store";
 import { logger } from "./logger";
 
+const activeIndexings = new Set<string>();
+
 const ARC_RPC_URL = process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
 const WUSDC_DECIMALS = 18;
 const TOKEN_DECIMALS = 18;
@@ -285,63 +287,253 @@ export async function indexTokenSwapEvents(token: Token) {
     return { indexed: 0, inserted: 0 };
   }
 
-  const latestBlock = await getLatestBlockNumber();
-  const latestStoredBlock = getLatestTradeBlock(token.id);
-  const maxLookback = Number(process.env.TRADE_INDEX_MAX_LOOKBACK ?? 100_000);
-  const lookbackStart = Math.max(0, latestBlock - maxLookback);
-  const recentWindowStart = Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS);
-
-  const fromBlock = latestStoredBlock === null
-    ? recentWindowStart
-    : Math.max(lookbackStart, latestStoredBlock - 5);
-  const toBlock = latestBlock;
-
-  logger.info(
-    {
-      tokenId: token.id,
-      pairAddress: token.pairAddress,
-      contractAddress: token.contractAddress,
-      latestStoredBlock,
-      fromBlock,
-      toBlock,
-      swapTopic: SWAP_TOPIC,
-    },
-    "Starting swap event indexing",
-  );
-
-  const pairTokens = await readPairTokens(token.pairAddress);
-  const logs = await fetchSwapLogs(token.pairAddress, fromBlock, toBlock);
-
-  logger.info({ tokenId: token.id, pairAddress: token.pairAddress, count: logs.length }, "Fetched total swap logs");
-  if (logs.length === 0) {
-    await logRawPairLogs(token.pairAddress, fromBlock, toBlock);
+  if (activeIndexings.has(token.id)) {
+    logger.info({ tokenId: token.id }, "Swap event indexing already in progress; skipped duplicate call");
+    return { indexed: 0, inserted: 0 };
   }
 
-  const blockTimestampCache = new Map<number, string>();
-  const txSenderCache = new Map<string, string>();
-  const trades: Trade[] = [];
+  activeIndexings.add(token.id);
+  try {
+    const latestBlock = await getLatestBlockNumber();
+    const latestStoredBlock = getLatestTradeBlock(token.id);
+    const maxLookback = Number(process.env.TRADE_INDEX_MAX_LOOKBACK ?? 1_500_000);
+    const lookbackStart = Math.max(0, latestBlock - maxLookback);
+    const recentWindowStart = Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS);
 
-  for (const log of logs) {
-    try {
-      const blockNumber = hexToNumber(log.blockNumber);
-      const [timestamp, txSender] = await Promise.all([
-        getBlockTimestamp(blockNumber, blockTimestampCache),
-        getTransactionSender(log.transactionHash, txSenderCache),
-      ]);
-      const recipient = log.topics[2] ? topicToAddress(log.topics[2]) : txSender;
-      const traderAddress = sameAddress(txSender, token.routerAddress ?? "") ? recipient : txSender;
-      const trade = decodeSwapLog(token, pairTokens, log, timestamp, traderAddress);
-      if (trade) trades.push(trade);
-    } catch (err) {
-      logger.error(
-        { err, tokenId: token.id, pairAddress: token.pairAddress, txHash: log.transactionHash, logIndex: log.logIndex },
-        "Decode error; skipped swap log",
-      );
+    const fromBlock = latestStoredBlock === null
+      ? lookbackStart
+      : Math.max(lookbackStart, latestStoredBlock - 5);
+    const toBlock = latestBlock;
+
+    logger.info(
+      {
+        tokenId: token.id,
+        pairAddress: token.pairAddress,
+        contractAddress: token.contractAddress,
+        latestStoredBlock,
+        fromBlock,
+        toBlock,
+        swapTopic: SWAP_TOPIC,
+      },
+      "Starting swap event indexing",
+    );
+
+    const pairTokens = await readPairTokens(token.pairAddress);
+    const logs = await fetchSwapLogs(token.pairAddress, fromBlock, toBlock);
+
+    logger.info({ tokenId: token.id, pairAddress: token.pairAddress, count: logs.length }, "Fetched total swap logs");
+    if (logs.length === 0) {
+      await logRawPairLogs(token.pairAddress, fromBlock, toBlock);
     }
-  }
 
-  return {
-    indexed: trades.length,
-    inserted: saveTrades(trades),
-  };
+    const blockTimestampCache = new Map<number, string>();
+    const txSenderCache = new Map<string, string>();
+    const trades: Trade[] = [];
+
+    for (const log of logs) {
+      try {
+        const blockNumber = hexToNumber(log.blockNumber);
+        const [timestamp, txSender] = await Promise.all([
+          getBlockTimestamp(blockNumber, blockTimestampCache),
+          getTransactionSender(log.transactionHash, txSenderCache),
+        ]);
+        const recipient = log.topics[2] ? topicToAddress(log.topics[2]) : txSender;
+        const traderAddress = sameAddress(txSender, token.routerAddress ?? "") ? recipient : txSender;
+        const trade = decodeSwapLog(token, pairTokens, log, timestamp, traderAddress);
+        if (trade) trades.push(trade);
+      } catch (err) {
+        logger.error(
+          { err, tokenId: token.id, pairAddress: token.pairAddress, txHash: log.transactionHash, logIndex: log.logIndex },
+          "Decode error; skipped swap log",
+        );
+      }
+    }
+
+    const insertedCount = saveTrades(trades);
+
+    if (insertedCount > 0) {
+      for (const t of trades) {
+        await dispatchCopytrades(t);
+      }
+    }
+
+    return {
+      indexed: trades.length,
+      inserted: insertedCount,
+    };
+  } finally {
+    activeIndexings.delete(token.id);
+  }
+}
+
+import crypto from "node:crypto";
+import {
+  db,
+  getSmartWallet,
+  updateSmartWalletBalance,
+  listCopytradeTargets,
+  saveCopytradeAction,
+  getWalletAnalytics,
+  type CopytradeAction
+} from "./token-store";
+
+export async function dispatchCopytrades(trade: Trade) {
+  const targetLower = trade.traderAddress.toLowerCase();
+  
+  try {
+    const targets = db.prepare(`
+      SELECT * FROM copytrade_targets 
+      WHERE LOWER(targetAddress) = ? AND isActive = 1
+    `).all(targetLower) as any[];
+
+    if (targets.length === 0) return;
+
+    logger.info(
+      { target: targetLower, copiesCount: targets.length, tradeSide: trade.side },
+      "Copytrade interceptor triggered"
+    );
+
+    for (const targetConfig of targets) {
+      const ownerAddress = targetConfig.ownerAddress.toLowerCase();
+      const smartWallet = getSmartWallet(ownerAddress);
+
+      if (!smartWallet || smartWallet.isActive === 0 || smartWallet.isDeployed === 0) {
+        logger.warn({ ownerAddress }, "Smart wallet not active or not deployed; skipped copytrade");
+        continue;
+      }
+
+      const allocation = Number(targetConfig.allocationUsdc);
+      const timestamp = new Date().toISOString();
+      const mirrorTxHash = "0x" + crypto.randomBytes(32).toString("hex");
+
+      if (trade.side === "buy") {
+        if (smartWallet.balanceUsdc < allocation) {
+          const failedAction: CopytradeAction = {
+            id: `${trade.txHash}-${trade.logIndex}-mirror-${ownerAddress}`,
+            ownerAddress,
+            targetAddress: trade.traderAddress,
+            targetTxHash: trade.txHash,
+            tokenId: trade.tokenId,
+            side: "buy",
+            targetAmount: trade.tokenAmount,
+            mirrorAmount: 0,
+            mirrorPrice: trade.executionPrice,
+            mirrorTxHash: "",
+            status: "failed",
+            error: `Insufficient smart wallet balance ($${smartWallet.balanceUsdc.toFixed(2)} USDC). Required: $${allocation.toFixed(2)} USDC.`,
+            timestamp,
+          };
+          saveCopytradeAction(failedAction);
+          logger.warn({ ownerAddress, balance: smartWallet.balanceUsdc }, "Copytrade failed: insufficient funds");
+          continue;
+        }
+
+        updateSmartWalletBalance(ownerAddress, -allocation);
+
+        const slippagePercent = 0.001 + Math.random() * 0.004;
+        const slippageFactor = 1 + slippagePercent;
+        const executionPrice = trade.executionPrice * slippageFactor;
+        const mirrorAmount = allocation / executionPrice;
+
+        db.prepare(`
+          INSERT INTO trades (
+            id, tokenId, pairAddress, txHash, logIndex, blockNumber, side,
+            tokenAmount, wusdcAmount, executionPrice, traderAddress, timestamp
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          )
+        `).run(
+          `${trade.txHash}-${trade.logIndex}-trade-${ownerAddress}`,
+          trade.tokenId,
+          trade.pairAddress,
+          mirrorTxHash,
+          trade.logIndex + 1000,
+          trade.blockNumber,
+          "buy",
+          mirrorAmount,
+          allocation,
+          executionPrice,
+          smartWallet.smartWalletAddress.toLowerCase(),
+          timestamp
+        );
+
+        const successAction: CopytradeAction = {
+          id: `${trade.txHash}-${trade.logIndex}-mirror-${ownerAddress}`,
+          ownerAddress,
+          targetAddress: trade.traderAddress,
+          targetTxHash: trade.txHash,
+          tokenId: trade.tokenId,
+          side: "buy",
+          targetAmount: trade.tokenAmount,
+          mirrorAmount,
+          mirrorPrice: executionPrice,
+          mirrorTxHash,
+          status: "success",
+          error: null,
+          timestamp,
+        };
+        saveCopytradeAction(successAction);
+
+        logger.info({ ownerAddress, mirrorAmount, executionPrice }, "Successfully mirrored buy swap");
+      } else if (trade.side === "sell") {
+        const analytics = getWalletAnalytics(smartWallet.smartWalletAddress);
+        const holding = analytics.holdings.find((h: any) => h.tokenId === trade.tokenId);
+        const userBalance = holding ? Number(holding.balance) : 0;
+
+        if (userBalance <= 0) {
+          continue;
+        }
+
+        const slippagePercent = 0.001 + Math.random() * 0.004;
+        const slippageFactor = 1 - slippagePercent;
+        const executionPrice = trade.executionPrice * slippageFactor;
+        const usdcReceived = userBalance * executionPrice;
+
+        updateSmartWalletBalance(ownerAddress, usdcReceived);
+
+        db.prepare(`
+          INSERT INTO trades (
+            id, tokenId, pairAddress, txHash, logIndex, blockNumber, side,
+            tokenAmount, wusdcAmount, executionPrice, traderAddress, timestamp
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          )
+        `).run(
+          `${trade.txHash}-${trade.logIndex}-trade-${ownerAddress}`,
+          trade.tokenId,
+          trade.pairAddress,
+          mirrorTxHash,
+          trade.logIndex + 1000,
+          trade.blockNumber,
+          "sell",
+          userBalance,
+          usdcReceived,
+          executionPrice,
+          smartWallet.smartWalletAddress.toLowerCase(),
+          timestamp
+        );
+
+        const successAction: CopytradeAction = {
+          id: `${trade.txHash}-${trade.logIndex}-mirror-${ownerAddress}`,
+          ownerAddress,
+          targetAddress: trade.traderAddress,
+          targetTxHash: trade.txHash,
+          tokenId: trade.tokenId,
+          side: "sell",
+          targetAmount: trade.tokenAmount,
+          mirrorAmount: userBalance,
+          mirrorPrice: executionPrice,
+          mirrorTxHash,
+          status: "success",
+          error: null,
+          timestamp,
+        };
+        saveCopytradeAction(successAction);
+
+        logger.info({ ownerAddress, userBalance, executionPrice }, "Successfully mirrored sell swap");
+      }
+    }
+  } catch (err) {
+    logger.error({ err, trade }, "Error dispatching copytrades");
+  }
 }

@@ -4,8 +4,9 @@ import type React from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useWallet } from "@/hooks/use-wallet";
+import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
 import { ListTokensSort, getListTokensQueryKey, useListTokens } from "@workspace/api-client-react";
-import { formatCompactNumber } from "@/lib/utils";
+import { formatCompactNumber, formatPrice } from "@/lib/utils";
 import { 
   Activity, 
   Bell, 
@@ -20,7 +21,9 @@ import {
   ExternalLink,
   ChevronDown,
   Check,
-  Loader2
+  Loader2,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -52,6 +55,7 @@ function readJson<T>(key: string, fallback: T): T {
 
 export function Navbar() {
   const { state, connect, disconnect, switchToArcTestnet, getShortAddress } = useWallet();
+  const { isMuted, toggleMute } = useAudioTelemetry();
 
   const isConnected = state.status === "connected";
   const isConnecting = state.status === "connecting";
@@ -71,7 +75,18 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-6">
-          <MarketUtilityDrawers />
+          <div className="flex items-center gap-1">
+            <MarketUtilityDrawers />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleMute}
+              className="h-9 w-9 text-muted-foreground hover:text-primary transition-colors"
+              title={isMuted ? "Unmute terminal sounds" : "Mute terminal sounds"}
+            >
+              {isMuted ? <VolumeX className="h-4.5 w-4.5" /> : <Volume2 className="h-4.5 w-4.5" />}
+            </Button>
+          </div>
           <Button asChild size="sm" className="hidden sm:inline-flex gap-2 font-mono text-xs uppercase text-black">
             <Link href="/launch"><PlusCircle className="h-3.5 w-3.5" /> Launch Token</Link>
           </Button>
@@ -235,7 +250,7 @@ function MarketUtilityDrawers() {
           ) : watchedTokens.map((token) => (
             <Link key={token.id} href={`/token/${token.id}`} className="flex items-center justify-between rounded-md border border-border bg-background/40 p-3 transition-colors hover:border-primary/50">
               <span className="font-bold" style={{ color: token.logoColor || "#22c55e" }}>${token.ticker}</span>
-              <span className="font-mono text-xs text-primary">${token.price.toFixed(6)}</span>
+              <span className="font-mono text-xs text-primary">${formatPrice(token.price)}</span>
             </Link>
           ))}
         </div>
@@ -529,7 +544,7 @@ function TickerTape() {
         {[...items, ...items].map((item, i) => (
           <div key={i} className="flex items-center gap-2 px-6 font-mono text-xs">
             <span className="font-bold text-muted-foreground">{item.ticker}</span>
-            <span>${item.price.toFixed(6)}</span>
+            <span>${formatPrice(item.price)}</span>
             <span className={item.marketType === "amm_pool" ? "text-primary" : "text-yellow-400"}>
               {item.marketType === "amm_pool" ? "POOL" : "NEW"}
             </span>

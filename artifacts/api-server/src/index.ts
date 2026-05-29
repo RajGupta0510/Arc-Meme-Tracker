@@ -1,6 +1,9 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { pathToFileURL } from "node:url";
+import { getTokens, saveTrades } from "./lib/token-store";
+import { dispatchCopytrades } from "./lib/swap-indexer";
+import crypto from "node:crypto";
 
 const isMainModule =
   process.argv[1] !== undefined &&

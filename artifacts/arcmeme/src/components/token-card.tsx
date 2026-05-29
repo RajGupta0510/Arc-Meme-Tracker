@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { formatAddress, formatCompactNumber } from "@/lib/utils";
+import { formatAddress, formatCompactNumber, formatPrice } from "@/lib/utils";
 import type { Token } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
@@ -106,7 +106,7 @@ export function TokenCard({
               </div>
             </div>
             <div className="text-right">
-              <div className="font-mono font-bold text-sm text-foreground/90">${price.toFixed(6)}</div>
+              <div className="font-mono font-bold text-sm text-foreground/90">${formatPrice(price)}</div>
               <div className={`font-mono text-xs font-semibold ${isPositive ? "text-primary" : "text-destructive"}`}>
                 {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{change24h.toFixed(2)}%
               </div>

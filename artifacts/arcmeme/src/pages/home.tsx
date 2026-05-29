@@ -11,10 +11,11 @@ import { TokenCard, TokenLogo } from "@/components/token-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImportTokenModal } from "@/components/import-token-modal";
-import { formatAddress, formatCompactNumber } from "@/lib/utils";
+import { formatAddress, formatCompactNumber, formatPrice } from "@/lib/utils";
 import { Grid3X3, Search, SlidersHorizontal, Star, Table2, Flame, Award, Clock, Users, ArrowUpRight, TrendingUp } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
 
 type ViewMode = "grid" | "table";
 type MarketFilter = "all" | "live" | "needs-pool" | "watchlist";
@@ -50,6 +51,7 @@ function readJson<T>(key: string, fallback: T): T {
 function LivePriceCell({ price }: { price: number }) {
   const [priceFlash, setPriceFlash] = useState<"up" | "down" | null>(null);
   const [lastPrice, setLastPrice] = useState(price);
+  const { playTickerClick } = useAudioTelemetry();
 
   useEffect(() => {
     if (price === lastPrice) return;
@@ -58,10 +60,11 @@ function LivePriceCell({ price }: { price: number }) {
     } else if (price < lastPrice) {
       setPriceFlash("down");
     }
+    playTickerClick();
     setLastPrice(price);
     const timer = setTimeout(() => setPriceFlash(null), 1000);
     return () => clearTimeout(timer);
-  }, [price, lastPrice]);
+  }, [price, lastPrice, playTickerClick]);
 
   return (
     <td
@@ -73,7 +76,7 @@ function LivePriceCell({ price }: { price: number }) {
           : "text-foreground/80"
       }`}
     >
-      ${price.toFixed(6)}
+      ${formatPrice(price)}
     </td>
   );
 }
@@ -105,6 +108,29 @@ function TerminalActivityFeed() {
     refetchInterval: 5000,
   });
 
+  const [activeTab, setActiveTab] = useState<"intel" | "arbitrage">("intel");
+  const { playHypeSound, playTickerClick } = useAudioTelemetry();
+  const prevLengthRef = useRef(signals.length);
+
+  useEffect(() => {
+    if (signals.length > prevLengthRef.current) {
+      const newest = signals[0];
+      if (newest) {
+        if (newest.type === "arbitrage_opportunity") {
+          playHypeSound();
+        } else {
+          playTickerClick();
+        }
+      }
+    }
+    prevLengthRef.current = signals.length;
+  }, [signals, playHypeSound, playTickerClick]);
+
+  const intelSignals = signals.filter((s) => s.type !== "arbitrage_opportunity");
+  const arbitrageSignals = signals.filter((s) => s.type === "arbitrage_opportunity");
+
+  const displaySignals = activeTab === "intel" ? intelSignals : arbitrageSignals;
+
   return (
     <div className="glass-panel p-4 flex flex-col gap-3 font-mono h-full border border-border/80 bg-card/45 backdrop-blur-md">
       <div className="flex items-center justify-between border-b border-border/40 pb-2">
@@ -114,34 +140,101 @@ function TerminalActivityFeed() {
         </div>
         <span className="text-[9px] text-muted-foreground uppercase tracking-widest animate-pulse">Telemetry Live</span>
       </div>
-      <div className="space-y-3 overflow-y-auto max-h-[500px] pr-1 text-xs">
+
+      {/* Tabs navigation */}
+      <div className="flex border-b border-border/20 text-[10px]">
+        <button
+          onClick={() => setActiveTab("intel")}
+          className={`flex-1 py-1.5 font-bold uppercase tracking-wider text-center transition-all ${
+            activeTab === "intel"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/10"
+          }`}
+        >
+          🚨 AI Intel ({intelSignals.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("arbitrage")}
+          className={`flex-1 py-1.5 font-bold uppercase tracking-wider text-center transition-all ${
+            activeTab === "arbitrage"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/10"
+          }`}
+        >
+          ⚡ Arb Radar ({arbitrageSignals.length})
+        </button>
+      </div>
+
+      <div className="space-y-3 overflow-y-auto max-h-[500px] pr-1 text-xs select-none">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 gap-2">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Syncing Feed...</span>
           </div>
-        ) : signals.length === 0 ? (
-          <div className="text-[10px] text-muted-foreground text-center py-6">No signals reported. Play some trades to trigger alerts!</div>
+        ) : displaySignals.length === 0 ? (
+          <div className="text-[10px] text-muted-foreground text-center py-12 italic border border-dashed border-border/40 rounded p-4 bg-black/20">
+            {activeTab === "intel"
+              ? "[SYS] No security signals reported. Awaiting active contract syncs..."
+              : "[SYS] Scanners quiet. No cross-DEX arbitrage discrepancies >= 1.5% detected."}
+          </div>
         ) : (
-          signals.map((sig) => {
+          displaySignals.map((sig) => {
             const isCritical = sig.severity === "critical";
             const isWarning = sig.severity === "warning";
-            const typeColor = isCritical 
+            const typeColor = isCritical
               ? "border-destructive/50 bg-destructive/10 text-destructive"
               : isWarning
               ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
               : "border-primary/30 bg-primary/10 text-primary";
 
-            const sideGlow = isCritical 
+            const sideGlow = isCritical
               ? "border-l-destructive shadow-[inset_4px_0_12px_rgba(239,68,68,0.06)]"
               : isWarning
               ? "border-l-yellow-500 shadow-[inset_4px_0_12px_rgba(234,179,8,0.06)]"
               : "border-l-primary shadow-[inset_4px_0_12px_rgba(34,197,94,0.06)]";
 
+            if (sig.type === "arbitrage_opportunity" && sig.arbitrage) {
+              const arb = sig.arbitrage;
+              return (
+                <div
+                  key={sig.id}
+                  className={`block border-l-2 pl-3 py-2.5 pr-2 rounded bg-card/25 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 ${sideGlow}`}
+                >
+                  <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
+                    <span className="px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border border-primary/40 bg-primary/10 text-primary uppercase">
+                      ⚡ Arb Triggered
+                    </span>
+                    <span className="text-primary font-bold">{arb.profitPercent.toFixed(2)}% net gap</span>
+                  </div>
+                  
+                  <div className="text-foreground/95 font-mono text-[10px] leading-relaxed">
+                    Arb discrepancy detected for <span className="text-primary font-bold">${sig.ticker}</span>:
+                    <div className="grid grid-cols-2 gap-2 mt-2 p-1.5 rounded bg-black/60 border border-border/20 text-[9px]">
+                      <div>
+                        <span className="text-muted-foreground">BUY:</span> <span className="text-primary font-extrabold">{arb.buyDex}</span>
+                        <div className="text-foreground/80 font-mono">${formatPrice(arb.buyPrice)}</div>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">SELL:</span> <span className="text-destructive font-extrabold">{arb.sellDex}</span>
+                        <div className="text-foreground/80 font-mono">${formatPrice(arb.sellPrice)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-[8px] text-muted-foreground">Ready to route</span>
+                    <Button asChild size="sm" className="h-6 px-3 text-[9px] text-black font-extrabold uppercase bg-primary hover:bg-primary/80">
+                      <Link href={`/token/${sig.tokenId}`}>Execute Arb</Link>
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
+
             return (
-              <Link 
-                href={`/token/${sig.tokenId}`} 
-                key={sig.id} 
+              <Link
+                href={`/token/${sig.tokenId}`}
+                key={sig.id}
                 className={`block border-l-2 pl-3 py-2 pr-2 rounded-r bg-card/10 hover:bg-card/45 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 cursor-pointer group ${sideGlow}`}
               >
                 <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
@@ -165,7 +258,7 @@ function TerminalActivityFeed() {
           })
         )}
       </div>
-      
+
       <div className="mt-4 pt-3 border-t border-border/40">
         <div className="mb-2 text-[9px] uppercase tracking-widest text-muted-foreground flex items-center justify-between">
           <span>Smart Money Arena</span>
@@ -394,7 +487,7 @@ export function HomePage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-mono text-xs font-bold text-foreground/90">${token.price.toFixed(6)}</div>
+                      <div className="font-mono text-xs font-bold text-foreground/90">${formatPrice(token.price)}</div>
                       <div className={`font-mono text-[10px] font-bold ${isPositive ? "text-primary" : "text-destructive"}`}>
                         {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{token.change24h.toFixed(2)}%
                       </div>
@@ -630,25 +723,6 @@ export function HomePage() {
                   </table>
                 </div>
               )}
-            </section>
-
-            {/* Price Alert Arming Box */}
-            <section className="glass-panel p-3.5 border border-border/80 bg-card/45 backdrop-blur-md">
-              <div className="grid gap-2 md:grid-cols-[1.2fr_0.8fr_0.9fr_auto]">
-                <select value={alertTokenId} onChange={(event) => setAlertTokenId(event.target.value)} className="h-9 rounded-md border border-border/50 bg-background/40 px-3 font-mono text-xs text-foreground/80">
-                  <option value="">Select token to arm alert</option>
-                  {filteredTokens.map((token) => <option key={token.id} value={token.id}>${token.ticker} - {token.name}</option>)}
-                </select>
-                <select value={alertMetric} onChange={(event) => setAlertMetric(event.target.value as AlertRule["metric"])} className="h-9 rounded-md border border-border/50 bg-background/40 px-3 font-mono text-xs text-foreground/80">
-                  <option value="price_above">Price Above ($)</option>
-                  <option value="price_below">Price Below ($)</option>
-                  <option value="volume_spike">24h Vol Spike ($)</option>
-                  <option value="liquidity_change">Liquidity (MCap) Exceeds ($)</option>
-                  <option value="whale_swap">Individual Whale Buy ($)</option>
-                </select>
-                <Input value={alertDraft} onChange={(e) => setAlertDraft(e.target.value)} placeholder="Alert Target Value..." type="number" className="h-9 bg-background/40 border-border/50 font-mono text-xs" />
-                <Button onClick={createAlert} size="sm" className="h-9 text-black uppercase tracking-wider font-bold font-mono">Arm Alert</Button>
-              </div>
             </section>
           </main>
 

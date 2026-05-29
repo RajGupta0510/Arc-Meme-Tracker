@@ -2,13 +2,21 @@ import { useState, useEffect, useCallback } from "react";
 import { BrowserProvider, formatUnits, type Eip1193Provider } from "ethers";
 import { formatBalance } from "@/lib/utils";
 
-// Arc Network uses native USDC as the gas token (18 native decimals)
-const ARC_TESTNET = {
+// Arc Network has two active testnet chain revisions: the new one (18 decimals) and the old one (6 decimals)
+const ARC_TESTNET_NEW = {
   chainId: "0x4cef52",
   chainName: "Arc Network Testnet",
   nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 18 },
   rpcUrls: ["https://rpc.testnet.arc.network"],
   blockExplorerUrls: ["https://testnet.arcscan.app"],
+};
+
+const ARC_TESTNET_OLD = {
+  chainId: "0x4e454153",
+  chainName: "Arc Network Testnet (Old)",
+  nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 6 },
+  rpcUrls: ["https://testnet-rpc.arcnetwork.io"],
+  blockExplorerUrls: ["https://testnet-explorer.arcnetwork.io"],
 };
 
 export type WalletState =
@@ -38,17 +46,26 @@ function getRawEthereum() {
 }
 
 function isOnArcTestnet(chainId: string) {
-  return chainId.toLowerCase() === ARC_TESTNET.chainId.toLowerCase();
+  return (
+    chainId.toLowerCase() === ARC_TESTNET_NEW.chainId.toLowerCase() ||
+    chainId.toLowerCase() === ARC_TESTNET_OLD.chainId.toLowerCase()
+  );
 }
 
-async function fetchUsdcBalance(address: string): Promise<string> {
-  const eth = getEthereum();
+async function fetchUsdcBalance(address: string, chainId: string): Promise<string> {
+  const eth = getRawEthereum() as any;
   if (!eth) return "0.000";
   try {
-    const provider = new BrowserProvider(eth);
-    const rawBalance = await provider.getBalance(address);
-    return formatBalance(formatUnits(rawBalance, 18));
-  } catch {
+    const hexBalance = (await eth.request({
+      method: "eth_getBalance",
+      params: [address, "latest"],
+    })) as string;
+    const rawBalance = BigInt(hexBalance);
+    const isOld = chainId.toLowerCase() === ARC_TESTNET_OLD.chainId.toLowerCase();
+    const decimals = isOld ? 6 : 18;
+    return formatBalance(formatUnits(rawBalance, decimals));
+  } catch (err) {
+    console.error("[useWallet] fetchUsdcBalance failed:", err);
     return "0.000";
   }
 }
@@ -62,7 +79,7 @@ export function useWallet() {
         return {
           status: "connected",
           address,
-          chainId: "0x4cef52",
+          chainId: ARC_TESTNET_NEW.chainId,
           isArcTestnet: true,
           usdcBalance: "—",
         };
@@ -91,7 +108,7 @@ export function useWallet() {
       const network = await provider.getNetwork();
       const chainId = "0x" + network.chainId.toString(16);
       const onArc = isOnArcTestnet(chainId);
-      const usdcBalance = onArc ? await fetchUsdcBalance(accounts[0]) : "0.000";
+      const usdcBalance = onArc ? await fetchUsdcBalance(accounts[0], chainId) : "0.000";
 
       setState({
         status: "connected",
@@ -119,13 +136,13 @@ export function useWallet() {
     if (state.status !== "connected" || !state.isArcTestnet) return;
     const address = state.address;
     const interval = setInterval(async () => {
-      const fresh = await fetchUsdcBalance(address);
+      const fresh = await fetchUsdcBalance(address, state.chainId);
       setState((prev) =>
         prev.status === "connected" ? { ...prev, usdcBalance: fresh } : prev
       );
     }, 15000);
     return () => clearInterval(interval);
-  }, [state.status === "connected" && state.isArcTestnet, state.status === "connected" ? state.address : null]);
+  }, [state.status === "connected" && state.isArcTestnet, state.status === "connected" ? state.address : null, state.status === "connected" ? state.chainId : null]);
 
   useEffect(() => {
     const eth = getRawEthereum();
@@ -201,13 +218,13 @@ export function useWallet() {
     try {
       await eth.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: ARC_TESTNET.chainId }],
+        params: [{ chainId: ARC_TESTNET_NEW.chainId }],
       });
     } catch (err: unknown) {
       if ((err as { code?: number }).code === 4902) {
         await eth.request({
           method: "wallet_addEthereumChain",
-          params: [ARC_TESTNET],
+          params: [ARC_TESTNET_NEW],
         });
       }
     }
