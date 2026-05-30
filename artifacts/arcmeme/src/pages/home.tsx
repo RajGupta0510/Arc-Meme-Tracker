@@ -488,7 +488,7 @@ export function HomePage() {
                 <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary))] terminal-pulse" />
                 Arc Meme Intelligence Terminal
               </div>
-              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight font-sans text-foreground/90">
+              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight font-sans bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">
                 Live Arc markets, ranked for action.
               </h1>
             </div>

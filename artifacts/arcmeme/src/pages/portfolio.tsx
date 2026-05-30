@@ -563,7 +563,7 @@ export function PortfolioPage() {
               <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_hsl(var(--primary))] terminal-pulse" />
               Wallet Portfolio OS
             </div>
-            <h1 className="text-2xl font-extrabold uppercase tracking-tight flex items-center gap-2.5">
+            <h1 className="text-2xl font-extrabold uppercase tracking-tight font-sans bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent flex items-center gap-2.5">
               Portfolio Overview
             </h1>
             <div className="font-mono text-[10px] text-muted-foreground/80 mt-1 break-all">

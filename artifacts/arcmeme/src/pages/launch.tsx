@@ -636,7 +636,7 @@ export function LaunchPage() {
               </span>
               <span className="text-[10px] text-primary uppercase font-bold tracking-widest animate-pulse">System Operational // Terminal Alpha v1.0.8</span>
             </div>
-            <h1 className="text-3xl font-extrabold uppercase tracking-tight text-foreground bg-gradient-to-r from-foreground via-primary/95 to-primary bg-clip-text text-transparent">
+            <h1 className="text-3xl font-extrabold uppercase tracking-tight font-sans bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">
               ARC MUTATOR // LAUNCHPAD
             </h1>
             <p className="text-xs text-muted-foreground mt-1 max-w-xl font-sans">
@@ -700,9 +700,11 @@ export function LaunchPage() {
 
               {/* Logo Upload */}
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                  <span className="w-1 h-1 bg-primary/70 rounded-full" />
-                  SYMBOL_LOGO_MATRIX
+                <label className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-2 w-full">
+                  <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
+                  <span>SYMBOL_LOGO_MATRIX</span>
+                  <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
+                  <span className="text-[7px] text-primary/60 font-mono">MEDIA_STORE</span>
                 </label>
                 <input
                   ref={fileInputRef}
@@ -783,9 +785,11 @@ export function LaunchPage() {
                   name="name"
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="uppercase text-[10px] tracking-wider text-muted-foreground font-bold flex items-center gap-1.5">
-                        <span className="w-1 h-1 bg-primary/70 rounded-full" />
-                        TOKEN_NAME
+                      <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                        <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
+                        <span>TOKEN_NAME</span>
+                        <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
+                        <span className="text-[7px] text-primary/60 font-mono">REQ_FIELD</span>
                       </FormLabel>
                       <FormControl>
                         <Input 
@@ -803,9 +807,11 @@ export function LaunchPage() {
                   name="ticker"
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
-                      <FormLabel className="uppercase text-[10px] tracking-wider text-muted-foreground font-bold flex items-center gap-1.5">
-                        <span className="w-1 h-1 bg-primary/70 rounded-full" />
-                        TICKER_SYMBOL
+                      <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                        <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
+                        <span>TICKER_SYMBOL</span>
+                        <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
+                        <span className="text-[7px] text-primary/60 font-mono">REQ_FIELD</span>
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -827,9 +833,11 @@ export function LaunchPage() {
                 name="description"
                 render={({ field }) => (
                   <FormItem className="space-y-1.5">
-                    <FormLabel className="uppercase text-[10px] tracking-wider text-muted-foreground font-bold flex items-center gap-1.5">
-                      <span className="w-1 h-1 bg-primary/70 rounded-full" />
-                      INDEX_DESCRIPTION
+                    <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                      <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
+                      <span>INDEX_DESCRIPTION</span>
+                      <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
+                      <span className="text-[7px] text-primary/60 font-mono">REQ_FIELD</span>
                     </FormLabel>
                     <FormControl>
                       <Textarea
@@ -849,9 +857,11 @@ export function LaunchPage() {
                 name="totalSupply"
                 render={({ field }) => (
                   <FormItem className="space-y-2">
-                    <FormLabel className="uppercase text-[10px] tracking-wider text-muted-foreground font-bold flex items-center gap-1.5">
-                      <span className="w-1 h-1 bg-primary/70 rounded-full" />
-                      TOTAL_SUPPLY_LIMIT
+                    <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                      <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
+                      <span>TOTAL_SUPPLY_LIMIT</span>
+                      <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
+                      <span className="text-[7px] text-primary/60 font-mono">SYS_PARAM</span>
                     </FormLabel>
                     
                     <div className="grid grid-cols-4 gap-2.5">
@@ -905,9 +915,11 @@ export function LaunchPage() {
                 name="logoColor"
                 render={({ field }) => (
                   <FormItem className="space-y-2">
-                    <FormLabel className="uppercase text-[10px] tracking-wider text-muted-foreground font-bold flex items-center gap-1.5">
-                      <span className="w-1 h-1 bg-primary/70 rounded-full" />
-                      BRAND_HEX_COLOR_PALETTE
+                    <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                      <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
+                      <span>BRAND_HEX_COLOR_PALETTE</span>
+                      <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
+                      <span className="text-[7px] text-primary/60 font-mono">FALLBACK_PALETTE</span>
                     </FormLabel>
                     <FormControl>
                       <div className="flex gap-4 items-center bg-black/20 p-3 rounded-lg border border-border/40">
@@ -949,9 +961,11 @@ export function LaunchPage() {
 
               {/* Socials */}
               <div className="space-y-4 pt-4 border-t border-border/40">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full" />
-                  METADATA_SOCIAL_RELAYS (OPTIONAL)
+                <h3 className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-2 w-full">
+                  <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-pulse" />
+                  <span>METADATA_SOCIAL_RELAYS</span>
+                  <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
+                  <span className="text-[7px] text-primary/60 font-mono">INDEX_NET</span>
                 </h3>
                 
                 <div className="space-y-2.5">
@@ -1275,10 +1289,10 @@ export function LaunchPage() {
             <div className="absolute inset-0 bg-[linear-gradient(rgba(34,197,94,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(34,197,94,0.015)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(0,0,0,0.45))] pointer-events-none" />
             
-            <div className="absolute top-2 left-2 text-[10px] font-mono text-muted-foreground/35 select-none font-light">+</div>
-            <div className="absolute top-2 right-2 text-[10px] font-mono text-muted-foreground/35 select-none font-light">+</div>
-            <div className="absolute bottom-2 left-2 text-[10px] font-mono text-muted-foreground/35 select-none font-light">+</div>
-            <div className="absolute bottom-2 right-2 text-[10px] font-mono text-muted-foreground/35 select-none font-light">+</div>
+            <div className="absolute top-2 left-2 text-[7px] font-mono text-muted-foreground/35 select-none font-light">SYS_COORD_A // [42.8]</div>
+            <div className="absolute top-2 right-2 text-[7px] font-mono text-muted-foreground/35 select-none font-light">INDEX_DEPTH // [99.2]</div>
+            <div className="absolute bottom-2 left-2 text-[7px] font-mono text-muted-foreground/35 select-none font-light">NODE_REF // [0x8f]</div>
+            <div className="absolute bottom-2 right-2 text-[7px] font-mono text-muted-foreground/35 select-none font-light">GRID_SYS // [ACTIVE]</div>
 
             {/* Token header */}
             <div className="flex items-start gap-4 relative z-10">

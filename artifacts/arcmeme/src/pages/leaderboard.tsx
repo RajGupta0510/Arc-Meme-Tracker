@@ -121,7 +121,7 @@ export function LeaderboardPage() {
             <Trophy className="h-4 w-4 animate-pulse" />
             Arc Trading Arena
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-foreground via-primary to-primary bg-clip-text text-transparent">
+          <h1 className="text-3xl font-extrabold tracking-tight font-sans bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">
             DEGEN LEADERBOARD
           </h1>
           <p className="text-muted-foreground text-sm max-w-xl mt-1">
