@@ -28,6 +28,7 @@ type ExecuteTradeParams = {
   tokenDecimals: number;
   amm: ArcAmmConfig;
   slippageBps?: number;
+  nativeDecimals?: number;
 };
 
 function getEthereum() {
@@ -75,10 +76,11 @@ export function useTokenTrade() {
       setStatus({ status: "quoting" });
       const signer = await getBrowserSigner(ethereum as unknown as Eip1193Provider);
       const slippageBps = params.slippageBps ?? 500;
+      const nativeDecimals = params.nativeDecimals ?? 18;
       let txHash: string;
 
       if (params.side === "buy") {
-        const amountIn = parseUnits(params.amount, 18);
+        const amountIn = parseUnits(params.amount, nativeDecimals);
         const quotedOut = calculateAmountOut(
           amountIn,
           params.reserves.quoteReserve,
@@ -97,6 +99,7 @@ export function useTokenTrade() {
           amountOutMin,
           amm: params.amm,
           signer,
+          nativeDecimals,
         });
       } else {
         const amountIn = parseUnits(params.amount, params.tokenDecimals);
@@ -119,6 +122,7 @@ export function useTokenTrade() {
           amountOutMin,
           amm: params.amm,
           signer,
+          nativeDecimals,
         });
       }
 

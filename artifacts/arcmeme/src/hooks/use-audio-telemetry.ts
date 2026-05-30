@@ -1,29 +1,35 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+
+// Singleton tracking state globally across all hook instances
+let globalMuted = typeof window !== "undefined" ? window.localStorage.getItem("arcmeme.sound_muted") === "true" : false;
+const muteListeners = new Set<(muted: boolean) => void>();
 
 export function useAudioTelemetry() {
-  const [isMuted, setIsMuted] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    try {
-      return window.localStorage.getItem("arcmeme.sound_muted") === "true";
-    } catch {
-      return false;
-    }
-  });
+  const [isMuted, setIsMuted] = useState<boolean>(globalMuted);
+
+  useEffect(() => {
+    const listener = (muted: boolean) => {
+      setIsMuted(muted);
+    };
+    muteListeners.add(listener);
+    return () => {
+      muteListeners.delete(listener);
+    };
+  }, []);
 
   const toggleMute = useCallback(() => {
-    setIsMuted((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem("arcmeme.sound_muted", String(next));
-      } catch (err) {
-        // ignore
-      }
-      return next;
-    });
+    globalMuted = !globalMuted;
+    try {
+      window.localStorage.setItem("arcmeme.sound_muted", String(globalMuted));
+    } catch {
+      // ignore
+    }
+    muteListeners.forEach((l) => l(globalMuted));
   }, []);
 
   const getAudioContext = useCallback((): AudioContext | null => {
-    if (isMuted || typeof window === "undefined") return null;
+    const isCurrentlyMuted = globalMuted || (typeof window !== "undefined" && window.localStorage.getItem("arcmeme.sound_muted") === "true");
+    if (isCurrentlyMuted || typeof window === "undefined") return null;
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return null;
     try {
@@ -31,7 +37,7 @@ export function useAudioTelemetry() {
     } catch {
       return null;
     }
-  }, [isMuted]);
+  }, []);
 
   const playBuySound = useCallback((amount = 0) => {
     const ctx = getAudioContext();

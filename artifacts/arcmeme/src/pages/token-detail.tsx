@@ -33,8 +33,8 @@ import {
   ArrowUpRight, 
   MessageSquare,
   AlertCircle,
-  Star,
-  Bell
+  Bell,
+  Star
 } from "lucide-react";
 import { formatUnits, parseUnits } from "ethers";
 import { calculateAmountIn, calculateAmountOut } from "@/lib/arc-amm";
@@ -193,6 +193,9 @@ export function TokenDetailPage() {
   const market = useTokenMarket(token, walletAddress);
   const trade = useTokenTrade();
   const liquidity = useTokenLiquidity();
+
+  const isOld = state.status === "connected" && state.chainId.toLowerCase() === "0x4e454153";
+  const nativeDecimals = isOld ? 6 : 18;
 
   const accentColor = token?.logoColor || "#22c55e";
 
@@ -466,7 +469,7 @@ export function TokenDetailPage() {
 
   const displayPrice = market.price ?? token?.price ?? 0;
   const poolUsdcReserve = market.reserves
-    ? formatBalance(formatUnits(market.reserves.quoteReserve, 18))
+    ? formatBalance(formatUnits(market.reserves.quoteReserve, nativeDecimals))
     : null;
   const poolTokenReserve = market.reserves
     ? formatBalance(formatUnits(market.reserves.baseReserve, market.tokenDecimals))
@@ -868,18 +871,36 @@ export function TokenDetailPage() {
     if (!market.reserves || !amount || Number(amount) <= 0) return "";
     try {
       if (tradeTab === "buy") {
-        const amountIn = parseUnits(amount, 18);
+        const amountIn = parseUnits(amount, nativeDecimals);
         const amountOut = calculateAmountOut(amountIn, market.reserves.quoteReserve, market.reserves.baseReserve);
         return formatSwapAmount(amountOut, market.tokenDecimals);
       }
 
       const amountIn = parseUnits(amount, market.tokenDecimals);
       const amountOut = calculateAmountOut(amountIn, market.reserves.baseReserve, market.reserves.quoteReserve);
-      return formatSwapAmount(amountOut, 18);
+      return formatSwapAmount(amountOut, nativeDecimals);
     } catch {
       return "";
     }
   };
+
+  useEffect(() => {
+    const handlePrepare = (e: Event) => {
+      const customEvent = e as CustomEvent<{ side: "buy" | "sell"; amount: string }>;
+      if (customEvent.detail) {
+        setTradeTab(customEvent.detail.side);
+        setTradeInputAmount(customEvent.detail.amount);
+        setTradeOutputAmount(quoteFromInput(customEvent.detail.amount));
+        
+        const consoleEl = document.getElementById("trade-console");
+        if (consoleEl) {
+          consoleEl.scrollIntoView({ behavior: "smooth" });
+        }
+      }
+    };
+    window.addEventListener("prepare-trade", handlePrepare);
+    return () => window.removeEventListener("prepare-trade", handlePrepare);
+  }, [quoteFromInput]);
 
   const inputFromOutput = (amount: string) => {
     if (!market.reserves || !amount || Number(amount) <= 0) return "";
@@ -887,10 +908,10 @@ export function TokenDetailPage() {
       if (tradeTab === "buy") {
         const amountOut = parseUnits(amount, market.tokenDecimals);
         const amountIn = calculateAmountIn(amountOut, market.reserves.quoteReserve, market.reserves.baseReserve);
-        return formatSwapAmount(amountIn, 18);
+        return formatSwapAmount(amountIn, nativeDecimals);
       }
 
-      const amountOut = parseUnits(amount, 18);
+      const amountOut = parseUnits(amount, nativeDecimals);
       const amountIn = calculateAmountIn(amountOut, market.reserves.baseReserve, market.reserves.quoteReserve);
       return formatSwapAmount(amountIn, market.tokenDecimals);
     } catch {
@@ -950,6 +971,7 @@ export function TokenDetailPage() {
   const handleTrade = async () => {
     if (!market.reserves) return;
     const amountStr = tradeInputAmount;
+
     const txHash = await trade.executeTrade({
       token: token!,
       side: tradeTab,
@@ -957,6 +979,7 @@ export function TokenDetailPage() {
       reserves: market.reserves,
       tokenDecimals: market.tokenDecimals,
       amm: market.amm,
+      nativeDecimals,
     });
 
     if (!txHash) return;
@@ -978,6 +1001,7 @@ export function TokenDetailPage() {
 
   const executeDirectTrade = async (side: "buy" | "sell", amountStr: string) => {
     if (!market.reserves || Number(amountStr) <= 0) return;
+
     const txHash = await trade.executeTrade({
       token: token!,
       side: side,
@@ -985,6 +1009,7 @@ export function TokenDetailPage() {
       reserves: market.reserves,
       tokenDecimals: market.tokenDecimals,
       amm: market.amm,
+      nativeDecimals,
     });
 
     if (!txHash) return;
@@ -1845,7 +1870,7 @@ export function TokenDetailPage() {
     </div>
 
       {/* ─── RIGHT COLUMN: Compact Trading Widgets & Socials ─── */}
-      <div className="w-full lg:w-[360px] flex flex-col gap-4 shrink-0 font-mono lg:sticky lg:top-[80px] lg:self-start lg:max-h-[calc(100vh-100px)] lg:overflow-y-auto pr-1 pb-10 hide-scrollbar">
+      <div className="w-full lg:w-[360px] flex flex-col gap-4 shrink-0 font-mono pb-10">
         
         {/* Full-screen neon green pulse overlay on hype boost click */}
         {showHypePulse && (
@@ -1880,7 +1905,7 @@ export function TokenDetailPage() {
         </div>
 
         {/* Trading widget terminal */}
-        <Card className="border-border/80 bg-card/40 backdrop-blur-md">
+        <Card id="trade-console" className="border-border/80 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-3 border-b border-border/40">
             <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <Wallet className="h-4 w-4 text-primary" />

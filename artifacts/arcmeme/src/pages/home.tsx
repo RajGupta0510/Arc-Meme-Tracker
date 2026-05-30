@@ -12,10 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImportTokenModal } from "@/components/import-token-modal";
 import { formatAddress, formatCompactNumber, formatPrice } from "@/lib/utils";
-import { Grid3X3, Search, SlidersHorizontal, Star, Table2, Flame, Award, Clock, Users, ArrowUpRight, TrendingUp } from "lucide-react";
+import { Grid3X3, Search, SlidersHorizontal, Star, Table2, Flame, Award, Clock, Users, ArrowUpRight, TrendingUp, ShieldAlert, Zap, Activity } from "lucide-react";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
+import { useToast } from "@/hooks/use-toast";
 
 type ViewMode = "grid" | "table";
 type MarketFilter = "all" | "live" | "needs-pool" | "watchlist";
@@ -145,23 +146,25 @@ function TerminalActivityFeed() {
       <div className="flex border-b border-border/20 text-[10px]">
         <button
           onClick={() => setActiveTab("intel")}
-          className={`flex-1 py-1.5 font-bold uppercase tracking-wider text-center transition-all ${
+          className={`flex-1 py-2 font-bold uppercase tracking-wider text-center transition-all flex items-center justify-center gap-1.5 ${
             activeTab === "intel"
               ? "border-b-2 border-primary text-primary"
               : "text-muted-foreground hover:text-foreground hover:bg-secondary/10"
           }`}
         >
-          🚨 AI Intel ({intelSignals.length})
+          <ShieldAlert className="h-3.5 w-3.5 text-primary shrink-0" />
+          AI Intel ({intelSignals.length})
         </button>
         <button
           onClick={() => setActiveTab("arbitrage")}
-          className={`flex-1 py-1.5 font-bold uppercase tracking-wider text-center transition-all ${
+          className={`flex-1 py-2 font-bold uppercase tracking-wider text-center transition-all flex items-center justify-center gap-1.5 ${
             activeTab === "arbitrage"
               ? "border-b-2 border-primary text-primary"
               : "text-muted-foreground hover:text-foreground hover:bg-secondary/10"
           }`}
         >
-          ⚡ Arb Radar ({arbitrageSignals.length})
+          <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
+          Arb Radar ({arbitrageSignals.length})
         </button>
       </div>
 
@@ -201,8 +204,8 @@ function TerminalActivityFeed() {
                   className={`block border-l-2 pl-3 py-2.5 pr-2 rounded bg-card/25 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 ${sideGlow}`}
                 >
                   <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
-                    <span className="px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border border-primary/40 bg-primary/10 text-primary uppercase">
-                      ⚡ Arb Triggered
+                    <span className="px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border border-primary/40 bg-primary/10 text-primary uppercase flex items-center gap-1">
+                      <Zap className="h-2.5 w-2.5 text-primary shrink-0 animate-pulse" /> Arb Triggered
                     </span>
                     <span className="text-primary font-bold">{arb.profitPercent.toFixed(2)}% net gap</span>
                   </div>
@@ -238,8 +241,15 @@ function TerminalActivityFeed() {
                 className={`block border-l-2 pl-3 py-2 pr-2 rounded-r bg-card/10 hover:bg-card/45 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 cursor-pointer group ${sideGlow}`}
               >
                 <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
-                  <span className={`px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border ${typeColor}`}>
-                    {sig.title}
+                  <span className={`px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border ${typeColor} flex items-center gap-1`}>
+                    {sig.type === "whale_buy" ? (
+                      <TrendingUp className="h-2.5 w-2.5 text-primary shrink-0" />
+                    ) : sig.type === "whale_sell" ? (
+                      <TrendingUp className="h-2.5 w-2.5 text-destructive shrink-0 rotate-90" />
+                    ) : (
+                      <Activity className="h-2.5 w-2.5 text-primary shrink-0" />
+                    )}
+                    {sig.title.replace(/[^\x00-\x7F]/g, "").trim()}
                   </span>
                   <span>{new Date(sig.timestamp).toLocaleTimeString()}</span>
                 </div>
@@ -283,6 +293,7 @@ function TerminalActivityFeed() {
 
 export function HomePage() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const {
     data: stats,
     isError: statsError,
@@ -294,12 +305,43 @@ export function HomePage() {
   const [sortField, setSortField] = useState<SortField>("volume24h");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [viewMode, setViewMode] = useState<ViewMode>("table");
-  const [marketFilter, setMarketFilter] = useState<MarketFilter>("live");
+  const [marketFilter, setMarketFilter] = useState<MarketFilter>(() => {
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const filterParam = searchParams.get("filter");
+      if (filterParam === "watchlist") return "watchlist";
+      if (filterParam === "all") return "all";
+    }
+    return "live";
+  });
   const [query, setQuery] = useState("");
   const [minVolume, setMinVolume] = useState("");
   const [minMarketCap, setMinMarketCap] = useState("");
   const [watchlist, setWatchlist] = useState<string[]>(() => readJson("arcmeme.watchlist", []));
   const [alerts, setAlerts] = useState<AlertRule[]>(() => readJson("arcmeme.alerts", []));
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      
+      const filterParam = searchParams.get("filter");
+      if (filterParam === "watchlist") {
+        setMarketFilter("watchlist");
+      } else if (filterParam === "all") {
+        setMarketFilter("all");
+      }
+      
+      const alertsParam = searchParams.get("alerts");
+      if (alertsParam === "show") {
+        toast({
+          title: "🔔 TELEMETRY ALERTS ACTIVE & ARMED",
+          description: "Price targets, 24h volume filters, and whale swap scans are running actively in the background. Alerts are stored locally.",
+        });
+        // Clear query parameter silently
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, [window.location.search, toast]);
   const [alertDraft, setAlertDraft] = useState("");
   const [alertMetric, setAlertMetric] = useState<AlertRule["metric"]>("price_above");
   const [alertTokenId, setAlertTokenId] = useState("");

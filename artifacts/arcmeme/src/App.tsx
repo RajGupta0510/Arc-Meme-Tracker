@@ -12,6 +12,7 @@ import { PortfolioPage } from "@/pages/portfolio";
 import { LeaderboardPage } from "@/pages/leaderboard";
 import { WalletDetailPage } from "@/pages/wallet-detail";
 import { useEffect } from "react";
+import { GlobalAiCopilot } from "@/components/global-ai-copilot";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ function App() {
               </main>
             </div>
           </div>
+          <GlobalAiCopilot />
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

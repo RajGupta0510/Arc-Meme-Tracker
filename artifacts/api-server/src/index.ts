@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { pathToFileURL } from "node:url";
-import { getTokens, saveTrades } from "./lib/token-store";
+import { getTokens, saveTrades, updateTokenMarketStats } from "./lib/token-store";
 import { dispatchCopytrades } from "./lib/swap-indexer";
 import crypto from "node:crypto";
 
@@ -31,6 +31,18 @@ if (isMainModule) {
     }
 
     logger.info({ port }, "Server listening");
+
+    // Self-heal and recalculate token stats on boot
+    try {
+      const tokens = getTokens();
+      logger.info({ count: tokens.length }, "Running startup token market stats self-healing...");
+      for (const token of tokens) {
+        updateTokenMarketStats(token.id);
+      }
+      logger.info("Startup token market stats self-healing completed.");
+    } catch (healErr) {
+      logger.error({ err: healErr }, "Startup token market stats self-healing failed");
+    }
   });
 }
 

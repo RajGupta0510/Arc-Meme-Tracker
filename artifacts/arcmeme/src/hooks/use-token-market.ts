@@ -13,6 +13,7 @@ import {
   type NormalizedReserves,
 } from "@/lib/arc-amm";
 import { formatBalance } from "@/lib/utils";
+import { useWallet } from "@/hooks/use-wallet";
 
 export type TokenMarketState = {
   isTradeable: boolean;
@@ -40,6 +41,9 @@ function getErrorMessage(error: unknown) {
 }
 
 export function useTokenMarket(token: Token | null | undefined, walletAddress?: string) {
+  const { state: walletState } = useWallet();
+  const walletChainId = walletState.status === "connected" ? walletState.chainId : undefined;
+
   const [state, setState] = useState<TokenMarketState>(() => ({
     isTradeable: false,
     amm: token ? getMarketAmm(token) : DEFAULT_ARC_AMM,
@@ -74,7 +78,7 @@ export function useTokenMarket(token: Token | null | undefined, walletAddress?: 
     setState((previous) => ({ ...previous, amm, isTradeable: true, isLoading: true, error: null }));
 
     try {
-      const provider = getArcReadProvider();
+      const provider = getArcReadProvider(walletChainId);
       const [rawReserves, tokenDecimals] = await Promise.all([
         readPairReserves(token.pairAddress, provider),
         readTokenDecimals(token.contractAddress, provider),
@@ -119,7 +123,7 @@ export function useTokenMarket(token: Token | null | undefined, walletAddress?: 
         error: getErrorMessage(error),
       }));
     }
-  }, [amm, isTradeable, token?.contractAddress, token?.marketType, token?.pairAddress, walletAddress]);
+  }, [amm, isTradeable, token?.contractAddress, token?.marketType, token?.pairAddress, walletAddress, walletChainId]);
 
   useEffect(() => {
     refresh();

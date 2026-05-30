@@ -659,6 +659,13 @@ export function saveTrades(trades: Trade[]) {
       inserted += Number(result.changes);
     }
     db.exec("COMMIT");
+
+    // Recalculate stats for each unique token in the saved trades
+    const tokenIds = [...new Set(trades.map((t) => t.tokenId))];
+    for (const tokenId of tokenIds) {
+      updateTokenMarketStats(tokenId);
+    }
+
     return inserted;
   } catch (err) {
     db.exec("ROLLBACK");
@@ -818,6 +825,14 @@ export function getTokens(): Token[] {
   return rows.map(rowToToken);
 }
 
+export function getAllTokens(): Token[] {
+  const rows = db
+    .prepare(`SELECT ${tokenColumns} FROM tokens`)
+    .all() as Record<string, unknown>[];
+
+  return rows.map(rowToToken);
+}
+
 export function listTrades(tokenId: string, limit = 50): Trade[] {
   const rows = db
     .prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber DESC, logIndex DESC LIMIT ?")
@@ -938,6 +953,77 @@ export function updateTokenMarket(
 
   if (result.changes === 0) return null;
   return getToken(id);
+}
+
+export function updateTokenMarketStats(tokenId: string) {
+  try {
+    const token = getToken(tokenId);
+    if (!token) return;
+
+    const trades = db.prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber ASC, logIndex ASC").all(tokenId) as any[];
+    if (trades.length === 0) return;
+
+    // Price is based on the latest execution price
+    const latestTrade = trades[trades.length - 1];
+    const price = Number(latestTrade.executionPrice);
+    const marketCap = price * token.totalSupply;
+    const txCount = trades.length;
+
+    // 24h volume
+    const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const trades24h = trades.filter(t => t.timestamp >= cutoff24h);
+    const volume24h = trades24h.reduce((sum, t) => sum + Number(t.wusdcAmount), 0);
+
+    // 24h change
+    let change24h = 0;
+    if (trades24h.length > 0) {
+      const tradesBefore24h = trades.filter(t => t.timestamp < cutoff24h);
+      let initialPrice = token.price; // fallback
+      if (tradesBefore24h.length > 0) {
+        initialPrice = Number(tradesBefore24h[tradesBefore24h.length - 1].executionPrice);
+      } else {
+        initialPrice = Number(trades24h[0].executionPrice);
+      }
+      if (initialPrice > 0) {
+        change24h = ((price - initialPrice) / initialPrice) * 100;
+      }
+    }
+
+    // Holders: unique traderAddress with positive remaining balance
+    const balances: Record<string, number> = {};
+    for (const t of trades) {
+      const addr = t.traderAddress.toLowerCase();
+      balances[addr] = (balances[addr] || 0) + (t.side === "buy" ? Number(t.tokenAmount) : -Number(t.tokenAmount));
+    }
+
+    const uniqueHolders = Object.keys(balances).filter(addr => balances[addr] > 0.0001);
+    let holdersCount = uniqueHolders.length;
+
+    // Add pair address if launched and not in list
+    if (token.pairAddress && !uniqueHolders.includes(token.pairAddress.toLowerCase())) {
+      holdersCount += 1;
+    }
+
+    // Add creator if not in list
+    if (token.creatorAddress && !uniqueHolders.includes(token.creatorAddress.toLowerCase())) {
+      holdersCount += 1;
+    }
+
+    db.prepare(`
+      UPDATE tokens
+      SET price = ?,
+          marketCap = ?,
+          volume24h = ?,
+          change24h = ?,
+          holders = ?,
+          txCount = ?
+      WHERE id = ?
+    `).run(price, marketCap, volume24h, change24h, holdersCount, txCount, tokenId);
+
+    logger.info({ tokenId, price, marketCap, volume24h, change24h, holdersCount, txCount }, "Updated token market stats in DB successfully");
+  } catch (err) {
+    logger.error({ err, tokenId }, "Failed to update token market stats");
+  }
 }
 
 export function getTokenDbPath() {

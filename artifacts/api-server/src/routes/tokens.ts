@@ -37,6 +37,7 @@ import {
 import { logger } from "../lib/logger";
 import { indexTokenSwapEvents } from "../lib/swap-indexer";
 import { fetchTokenMetadata, detectMarket } from "../lib/arc-rpc";
+import { generateCopilotResponse } from "../lib/ai-copilot";
 
 const router: IRouter = Router();
 
@@ -453,6 +454,15 @@ router.get("/portfolio/:address", async (req, res): Promise<void> => {
 
     const tokens = getTokens();
 
+    // Trigger background swap indexing for all active AMM tokens to ensure portfolio data is up-to-date
+    for (const token of tokens) {
+      if (token.marketType === "amm_pool" && token.pairAddress && token.contractAddress) {
+        indexTokenSwapEvents(token).catch(err => {
+          logger.error({ err, tokenId: token.id }, "Background swap indexing failed during portfolio fetch");
+        });
+      }
+    }
+
     const tokenStats: Record<string, {
       tokenId: string;
       ticker: string;
@@ -471,32 +481,32 @@ router.get("/portfolio/:address", async (req, res): Promise<void> => {
       currentTokens: number;
     }> = {};
 
+    // Initialize stats for ALL tokens, so on-chain balance check can see them even if no trades are in DB yet
+    for (const tok of tokens) {
+      tokenStats[tok.id] = {
+        tokenId: tok.id,
+        ticker: tok.ticker,
+        name: tok.name,
+        logoColor: tok.logoColor,
+        contractAddress: tok.contractAddress,
+        pairAddress: tok.pairAddress,
+        marketType: tok.marketType,
+        currentPrice: tok.price,
+        totalBought: 0,
+        totalSold: 0,
+        totalUsdcSpent: 0,
+        totalUsdcReceived: 0,
+        avgEntryPrice: 0,
+        realizedPnl: 0,
+        currentTokens: 0,
+      };
+    }
+
     for (const trade of trades) {
       const tId = trade.tokenId;
-      const tok = tokens.find(t => t.id === tId);
-      if (!tok) continue;
-
-      if (!tokenStats[tId]) {
-        tokenStats[tId] = {
-          tokenId: tId,
-          ticker: tok.ticker,
-          name: tok.name,
-          logoColor: tok.logoColor,
-          contractAddress: tok.contractAddress,
-          pairAddress: tok.pairAddress,
-          marketType: tok.marketType,
-          currentPrice: tok.price,
-          totalBought: 0,
-          totalSold: 0,
-          totalUsdcSpent: 0,
-          totalUsdcReceived: 0,
-          avgEntryPrice: 0,
-          realizedPnl: 0,
-          currentTokens: 0,
-        };
-      }
-
       const stats = tokenStats[tId];
+      if (!stats) continue;
+
       const side = trade.side;
       const tokenAmount = Number(trade.tokenAmount);
       const wusdcAmount = Number(trade.wusdcAmount);
@@ -1227,6 +1237,22 @@ router.post("/tokens/:id/hype", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err, id: req.params.id }, "POST /api/tokens/:id/hype failed");
     res.status(500).json({ error: "Failed to increment hype." });
+  }
+});
+
+router.post("/tokens/:id/ai-chat", async (req, res): Promise<void> => {
+  try {
+    const id = req.params.id;
+    const { prompt } = req.body;
+    if (!prompt || typeof prompt !== "string") {
+      res.status(400).json({ error: "prompt parameter is required." });
+      return;
+    }
+    const response = await generateCopilotResponse(id, prompt);
+    res.json(response);
+  } catch (err) {
+    logger.error({ err, id: req.params.id }, "POST /api/tokens/:id/ai-chat failed");
+    res.status(500).json({ error: "Failed to generate AI copilot response." });
   }
 });
 

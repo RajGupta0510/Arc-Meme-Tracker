@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatAddress, formatBalance, formatCompactNumber, formatPrice } from "@/lib/utils";
-import { Loader2, ArrowUpRight, TrendingUp, TrendingDown, WalletCards, Activity, Award, Briefcase, RefreshCw, BarChart2 } from "lucide-react";
+import { Loader2, ArrowUpRight, TrendingUp, TrendingDown, WalletCards, Activity, Award, Briefcase, RefreshCw, BarChart2, CheckCircle } from "lucide-react";
 import { Link } from "wouter";
 import {
   getArcReadProvider,
@@ -418,7 +418,9 @@ export function PortfolioPage() {
     if (!walletAddress || !portfolioData?.holdings) return;
     setLiveLoading(true);
     try {
-      const provider = getArcReadProvider();
+      const isOld = state.status === "connected" && state.chainId.toLowerCase() === "0x4e454153";
+      const nativeDecimals = isOld ? 6 : 18;
+      const provider = getArcReadProvider(state.status === "connected" ? state.chainId : undefined);
       const holdingsList = [];
       const lpsList = [];
 
@@ -455,7 +457,7 @@ export function PortfolioPage() {
               const quoteContributedWei = (reserves.quoteReserve * lpBalanceWei) / lpTotalSupplyWei;
 
               lpContributedBase = Number(formatUnits(baseContributedWei, decimals));
-              lpContributedQuote = Number(formatUnits(quoteContributedWei, 18));
+              lpContributedQuote = Number(formatUnits(quoteContributedWei, nativeDecimals));
               lpContributedValue = lpContributedQuote * 2;
             } catch (err) {
               console.error("Failed to fetch reserves for pair", item.pairAddress, err);
@@ -467,12 +469,14 @@ export function PortfolioPage() {
         const totalValue = balance * currentPrice;
         const unrealizedPnl = (currentPrice - item.avgEntryPrice) * balance;
 
-        holdingsList.push({
-          ...item,
-          balance,
-          totalValue,
-          unrealizedPnl,
-        });
+        if (balance > 0 || item.totalBought > 0) {
+          holdingsList.push({
+            ...item,
+            balance,
+            totalValue,
+            unrealizedPnl,
+          });
+        }
 
         if (lpBalance > 0) {
           lpsList.push({
@@ -797,8 +801,9 @@ export function PortfolioPage() {
                         Deploy Smart Wallet on-chain
                       </Button>
                     ) : (
-                      <div className="rounded border border-primary/20 bg-primary/5 p-2.5 font-mono text-[10px] text-primary text-center">
-                        ⚡ Deterministic AA Contract Fully Deployed.
+                      <div className="rounded border border-primary/20 bg-primary/5 p-2.5 font-mono text-[9px] text-primary text-center flex items-center justify-center gap-1.5 font-bold uppercase tracking-wider">
+                        <CheckCircle className="w-3.5 h-3.5 text-primary stroke-[2.5]" />
+                        <span>Deterministic AA Contract Fully Deployed</span>
                       </div>
                     )}
                   </div>

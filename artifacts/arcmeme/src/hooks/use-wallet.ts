@@ -53,14 +53,11 @@ function isOnArcTestnet(chainId: string) {
 }
 
 async function fetchUsdcBalance(address: string, chainId: string): Promise<string> {
-  const eth = getRawEthereum() as any;
+  const eth = getEthereum();
   if (!eth) return "0.000";
   try {
-    const hexBalance = (await eth.request({
-      method: "eth_getBalance",
-      params: [address, "latest"],
-    })) as string;
-    const rawBalance = BigInt(hexBalance);
+    const provider = new BrowserProvider(eth);
+    const rawBalance = await provider.getBalance(address);
     const isOld = chainId.toLowerCase() === ARC_TESTNET_OLD.chainId.toLowerCase();
     const decimals = isOld ? 6 : 18;
     return formatBalance(formatUnits(rawBalance, decimals));
@@ -70,17 +67,20 @@ async function fetchUsdcBalance(address: string, chainId: string): Promise<strin
   }
 }
 
+
 export function useWallet() {
   const [state, setState] = useState<WalletState>(() => {
     if (typeof window !== "undefined") {
       const cached = window.localStorage.getItem("arcmeme.wallet_connected");
       const address = window.localStorage.getItem("arcmeme.wallet_address");
+      const chainId = window.localStorage.getItem("arcmeme.wallet_chain_id") || ARC_TESTNET_NEW.chainId;
       if (cached === "true" && address) {
+        const onArc = isOnArcTestnet(chainId);
         return {
           status: "connected",
           address,
-          chainId: ARC_TESTNET_NEW.chainId,
-          isArcTestnet: true,
+          chainId,
+          isArcTestnet: onArc,
           usdcBalance: "—",
         };
       }
@@ -121,12 +121,14 @@ export function useWallet() {
       if (typeof window !== "undefined") {
         window.localStorage.setItem("arcmeme.wallet_connected", "true");
         window.localStorage.setItem("arcmeme.wallet_address", accounts[0]);
+        window.localStorage.setItem("arcmeme.wallet_chain_id", chainId);
       }
     } catch {
       setState({ status: "disconnected" });
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("arcmeme.wallet_connected");
         window.localStorage.removeItem("arcmeme.wallet_address");
+        window.localStorage.removeItem("arcmeme.wallet_chain_id");
       }
     }
   }, []);
@@ -209,6 +211,7 @@ export function useWallet() {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("arcmeme.wallet_connected");
       window.localStorage.removeItem("arcmeme.wallet_address");
+      window.localStorage.removeItem("arcmeme.wallet_chain_id");
     }
   }, []);
 

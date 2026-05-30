@@ -1,7 +1,8 @@
-import { getLatestTradeBlock, saveTrades, type Token, type Trade } from "./token-store";
+import { getLatestTradeBlock, saveTrades, updateTokenMarketStats, type Token, type Trade } from "./token-store";
 import { logger } from "./logger";
 
 const activeIndexings = new Set<string>();
+const lastScannedBlockMap = new Map<string, number>();
 
 const ARC_RPC_URL = process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
 const WUSDC_DECIMALS = 18;
@@ -296,13 +297,17 @@ export async function indexTokenSwapEvents(token: Token) {
   try {
     const latestBlock = await getLatestBlockNumber();
     const latestStoredBlock = getLatestTradeBlock(token.id);
+    const lastScannedBlock = lastScannedBlockMap.get(token.id) ?? null;
     const maxLookback = Number(process.env.TRADE_INDEX_MAX_LOOKBACK ?? 1_500_000);
     const lookbackStart = Math.max(0, latestBlock - maxLookback);
     const recentWindowStart = Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS);
 
-    const fromBlock = latestStoredBlock === null
-      ? lookbackStart
-      : Math.max(lookbackStart, latestStoredBlock - 5);
+    let fromBlock = lookbackStart;
+    if (latestStoredBlock !== null) {
+      fromBlock = Math.max(lookbackStart, latestStoredBlock - 5);
+    } else if (lastScannedBlock !== null) {
+      fromBlock = Math.max(lookbackStart, lastScannedBlock - 5);
+    }
     const toBlock = latestBlock;
 
     logger.info(
@@ -311,6 +316,7 @@ export async function indexTokenSwapEvents(token: Token) {
         pairAddress: token.pairAddress,
         contractAddress: token.contractAddress,
         latestStoredBlock,
+        lastScannedBlock,
         fromBlock,
         toBlock,
         swapTopic: SWAP_TOPIC,
@@ -356,6 +362,11 @@ export async function indexTokenSwapEvents(token: Token) {
         await dispatchCopytrades(t);
       }
     }
+
+    // Force recalculation of token price, volume, change, holders, and txCount in database
+    updateTokenMarketStats(token.id);
+
+    lastScannedBlockMap.set(token.id, toBlock);
 
     return {
       indexed: trades.length,

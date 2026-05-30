@@ -152,8 +152,14 @@ function toDeadline(secondsFromNow = 60 * 20) {
   return Math.floor(Date.now() / 1000) + secondsFromNow;
 }
 
-export function getArcReadProvider(rpcUrl = ARC_TESTNET_RPC_URL) {
-  return new JsonRpcProvider(rpcUrl, ARC_TESTNET_CHAIN_ID);
+export function getArcReadProvider(chainIdOrUrl?: string) {
+  if (chainIdOrUrl && chainIdOrUrl.startsWith("http")) {
+    return new JsonRpcProvider(chainIdOrUrl);
+  }
+  const isOld = chainIdOrUrl ? chainIdOrUrl.toLowerCase() === "0x4e454153" : (typeof window !== "undefined" && window.localStorage.getItem("arcmeme.wallet_chain_id") === "0x4e454153");
+  const rpcUrl = isOld ? "https://testnet-rpc.arcnetwork.io" : "https://rpc.testnet.arc.network";
+  const chainIdNum = isOld ? 1313165651 : 5042002;
+  return new JsonRpcProvider(rpcUrl, chainIdNum);
 }
 
 export async function getBrowserSigner(ethereum: Eip1193Provider) {
@@ -398,8 +404,8 @@ export async function addTokenUsdcLiquidity(params: {
   const amountTokenMin = tokenAmount - (tokenAmount * slippageBps) / 10_000n;
   const amountWusdcMin = wusdcAmount - (wusdcAmount * slippageBps) / 10_000n;
 
-  await approveIfNeeded(params.tokenAddress, signerAddress, amm.routerAddress, tokenAmount, params.signer);
-  await approveIfNeeded(amm.wusdcAddress, signerAddress, amm.routerAddress, wusdcAmount, params.signer);
+  await approveMaxIfNeeded(params.tokenAddress, signerAddress, amm.routerAddress, params.signer);
+  await approveMaxIfNeeded(amm.wusdcAddress, signerAddress, amm.routerAddress, params.signer);
 
   const tx = await router.addLiquidity(
     params.tokenAddress,
@@ -444,7 +450,7 @@ export async function removeTokenUsdcLiquidity(params: {
   const amountTokenMin = expectedTokenAmount - (expectedTokenAmount * slippageBps) / 10_000n;
   const amountWusdcMin = expectedWusdcAmount - (expectedWusdcAmount * slippageBps) / 10_000n;
 
-  await approveIfNeeded(params.pairAddress, signerAddress, amm.routerAddress, liquidity, params.signer);
+  await approveMaxIfNeeded(params.pairAddress, signerAddress, amm.routerAddress, params.signer);
 
   const tx = await router.removeLiquidity(
     params.tokenAddress,
@@ -465,12 +471,17 @@ export async function buyTokenWithNativeUsdc(params: {
   amountOutMin: BigNumberish;
   amm?: ArcAmmConfig;
   signer: Signer;
+  nativeDecimals?: number;
 }) {
   const amm = params.amm ?? DEFAULT_ARC_AMM;
   const router = getRouterContract(amm, params.signer);
   const signerAddress = await params.signer.getAddress();
   const path = [amm.wusdcAddress, params.tokenAddress];
-  const value = parseUnits(params.nativeUsdcAmount, 18);
+  const decimals = params.nativeDecimals ?? 18;
+  const value = parseUnits(params.nativeUsdcAmount, decimals);
+
+  const feeNative = amm.externalProtocolFeeNative ?? 0n;
+  const scaledFee = decimals === 6 ? feeNative / 1000000000000n : feeNative;
 
   const tx =
     amm.routerKind === "apexiswap-v1"
@@ -479,10 +490,11 @@ export async function buyTokenWithNativeUsdc(params: {
           path,
           signerAddress,
           toDeadline(),
-          { value },
+          { value, gasLimit: 350000n },
         )
       : await router.swapExactETHForTokens(params.amountOutMin, path, signerAddress, toDeadline(), {
-          value: value + (amm.externalProtocolFeeNative ?? 0n),
+          value: value + scaledFee,
+          gasLimit: 350000n,
         });
 
   await tx.wait();
@@ -496,14 +508,19 @@ export async function sellTokenForNativeUsdc(params: {
   amountOutMin: BigNumberish;
   amm?: ArcAmmConfig;
   signer: Signer;
+  nativeDecimals?: number;
 }) {
   const amm = params.amm ?? DEFAULT_ARC_AMM;
   const router = getRouterContract(amm, params.signer);
   const signerAddress = await params.signer.getAddress();
   const amountIn = parseUnits(params.tokenAmount, params.tokenDecimals);
   const path = [params.tokenAddress, amm.wusdcAddress];
+  const decimals = params.nativeDecimals ?? 18;
 
-  await approveIfNeeded(params.tokenAddress, signerAddress, amm.routerAddress, amountIn, params.signer);
+  const feeNative = amm.externalProtocolFeeNative ?? 0n;
+  const scaledFee = decimals === 6 ? feeNative / 1000000000000n : feeNative;
+
+  await approveMaxIfNeeded(params.tokenAddress, signerAddress, amm.routerAddress, params.signer);
 
   const tx =
     amm.routerKind === "apexiswap-v1"
@@ -513,9 +530,11 @@ export async function sellTokenForNativeUsdc(params: {
           path,
           signerAddress,
           toDeadline(),
+          { gasLimit: 350000n },
         )
       : await router.swapExactTokensForETH(amountIn, params.amountOutMin, path, signerAddress, toDeadline(), {
-          value: amm.externalProtocolFeeNative ?? 0n,
+          value: scaledFee,
+          gasLimit: 350000n,
         });
 
   await tx.wait();

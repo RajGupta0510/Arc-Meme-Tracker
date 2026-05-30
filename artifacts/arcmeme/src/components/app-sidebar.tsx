@@ -50,18 +50,24 @@ export function AppSidebar() {
             Discovery Stack
           </div>
           <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-muted-foreground"><Star className="h-3.5 w-3.5" /> Watchlist</span>
-              <span className="font-mono text-primary">local</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-muted-foreground"><Bell className="h-3.5 w-3.5" /> Alerts</span>
-              <span className="font-mono text-primary">armed</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-muted-foreground"><WalletCards className="h-3.5 w-3.5" /> Arc Pooling</span>
-              <span className="font-mono text-yellow-400">beta</span>
-            </div>
+            <Link href="/?filter=watchlist" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+              <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
+                <Star className="h-3.5 w-3.5 text-primary group-hover:scale-110 transition-transform" /> Watchlist
+              </span>
+              <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">local</span>
+            </Link>
+            <Link href="/?alerts=show" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+              <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
+                <Bell className="h-3.5 w-3.5 text-primary group-hover:animate-bounce" /> Alerts
+              </span>
+              <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">armed</span>
+            </Link>
+            <Link href="/launch" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+              <span className="flex items-center gap-2 text-muted-foreground group-hover:text-yellow-400 transition-colors">
+                <WalletCards className="h-3.5 w-3.5 text-yellow-400" /> Arc Pooling
+              </span>
+              <span className="font-mono text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">beta</span>
+            </Link>
           </div>
         </div>
       </div>
