@@ -929,7 +929,7 @@ export function TokenDetailPage() {
       if (inputType === "token") {
         const tokenVal = parseUnits(amount, market.tokenDecimals);
         const wusdcVal = (tokenVal * quoteReserve) / baseReserve;
-        const formatted = formatUnits(wusdcVal, 18);
+        const formatted = formatUnits(wusdcVal, nativeDecimals);
         let clean = formatted;
         if (clean.includes(".")) {
           clean = clean.replace(/0+$/, "");
@@ -939,7 +939,7 @@ export function TokenDetailPage() {
         }
         return clean;
       } else {
-        const wusdcVal = parseUnits(amount, 18);
+        const wusdcVal = parseUnits(amount, nativeDecimals);
         const tokenVal = (wusdcVal * baseReserve) / quoteReserve;
         const formatted = formatUnits(tokenVal, market.tokenDecimals);
         let clean = formatted;

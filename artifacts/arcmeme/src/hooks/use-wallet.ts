@@ -46,10 +46,7 @@ function getRawEthereum() {
 }
 
 function isOnArcTestnet(chainId: string) {
-  return (
-    chainId.toLowerCase() === ARC_TESTNET_NEW.chainId.toLowerCase() ||
-    chainId.toLowerCase() === ARC_TESTNET_OLD.chainId.toLowerCase()
-  );
+  return chainId.toLowerCase() === ARC_TESTNET_NEW.chainId.toLowerCase();
 }
 
 async function fetchUsdcBalance(address: string, chainId: string): Promise<string> {

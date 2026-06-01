@@ -13,11 +13,11 @@ export function AppSidebar() {
   return (
     <aside className="hidden lg:flex sticky top-0 h-screen w-64 shrink-0 flex-col border-r border-border/80 bg-background/78 backdrop-blur-xl">
       <Link href="/" className="flex h-16 items-center gap-3 border-b border-border/70 px-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-primary shadow-[0_0_24px_rgba(34,197,94,0.16)]">
-          <Radar className="h-5 w-5" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden border border-primary/40 bg-black/40 shadow-[0_0_24px_rgba(34,197,94,0.16)]">
+          <img src="/arcmeme-logo.png" alt="ArcMeme Logo" className="h-full w-full object-cover" />
         </div>
         <div>
-          <div className="text-lg font-extrabold tracking-tight text-primary">ArcMeme</div>
+          <div className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">ArcMeme</div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Market OS</div>
         </div>
       </Link>

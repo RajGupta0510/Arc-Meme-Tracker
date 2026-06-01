@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import type { Token } from "@workspace/api-client-react";
 import { parseUnits, type Eip1193Provider } from "ethers";
+import { useWallet } from "@/hooks/use-wallet";
 import {
   DEFAULT_ARC_AMM,
   addTokenUsdcLiquidity,
@@ -63,6 +64,9 @@ async function saveTokenMarket(tokenId: string, pairAddress: string) {
 
 export function useCreateLiquidityPool() {
   const [status, setStatus] = useState<LiquidityStatus>({ status: "idle" });
+  const { state: walletState } = useWallet();
+  const isOld = walletState.status === "connected" && walletState.chainId.toLowerCase() === "0x4e454153";
+  const nativeDecimals = isOld ? 6 : 18;
 
   const reset = useCallback(() => setStatus({ status: "idle" }), []);
 
@@ -86,7 +90,7 @@ export function useCreateLiquidityPool() {
         const pairResult = await createTokenUsdcPair(token.contractAddress, DEFAULT_ARC_AMM, signer);
 
         setStatus({ status: "wrapping-usdc" });
-        await wrapNativeUsdc(parseUnits(wusdcAmount, 18), DEFAULT_ARC_AMM, signer);
+        await wrapNativeUsdc(parseUnits(wusdcAmount, nativeDecimals), DEFAULT_ARC_AMM, signer);
 
         setStatus({ status: "approving" });
         const tokenDecimals = await readTokenDecimals(token.contractAddress, signer);
@@ -98,6 +102,7 @@ export function useCreateLiquidityPool() {
           tokenDecimals,
           wusdcAmount,
           signer,
+          nativeDecimals,
         });
 
         setStatus({ status: "saving-market" });

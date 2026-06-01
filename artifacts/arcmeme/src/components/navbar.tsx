@@ -18,6 +18,7 @@ import {
   LogOut,
   PieChart,
   Copy,
+  Droplet,
   ExternalLink,
   ChevronDown,
   Check,
@@ -64,9 +65,11 @@ export function Navbar() {
   return (
     <div className="w-full flex flex-col border-b border-border/80 bg-background/82 backdrop-blur-xl sticky top-0 z-50">
       <div className="flex h-16 items-center px-4 w-full justify-between">
-        <Link href="/" className="lg:hidden flex items-center gap-2 text-primary font-bold text-xl tracking-tighter">
-          <Radar className="h-5 w-5" />
-          ArcMeme
+        <Link href="/" className="lg:hidden flex items-center gap-2 font-bold text-xl tracking-tighter text-foreground">
+          <div className="flex h-6 w-6 items-center justify-center rounded overflow-hidden border border-primary/40 bg-black/40">
+            <img src="/arcmeme-logo.png" alt="ArcMeme Logo" className="h-full w-full object-cover" />
+          </div>
+          <span className="bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">ArcMeme</span>
         </Link>
         <div className="hidden lg:flex items-center gap-3">
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Arc Testnet</div>
@@ -98,11 +101,11 @@ export function Navbar() {
             </SheetTrigger>
             <SheetContent side="left" className="w-64 border-border bg-background/95 p-0 backdrop-blur-xl flex flex-col h-full z-[100]">
               <div className="flex h-16 items-center gap-3 border-b border-border/70 px-5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-primary shadow-[0_0_24px_rgba(34,197,94,0.16)]">
-                  <Radar className="h-5 w-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden border border-primary/40 bg-black/40 shadow-[0_0_24px_rgba(34,197,94,0.16)]">
+                  <img src="/arcmeme-logo.png" alt="ArcMeme Logo" className="h-full w-full object-cover" />
                 </div>
                 <div>
-                  <div className="text-lg font-extrabold tracking-tight text-primary">ArcMeme</div>
+                  <div className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">ArcMeme</div>
                   <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Market OS</div>
                 </div>
               </div>
@@ -488,6 +491,18 @@ function WalletButton({
             </a>
           </DropdownMenuItem>
 
+          <DropdownMenuItem asChild>
+            <a 
+              href="https://faucet.circle.com/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all"
+            >
+              <Droplet className="h-3.5 w-3.5" />
+              <span>Faucet</span>
+            </a>
+          </DropdownMenuItem>
+
           {isWrongNetwork && (
             <DropdownMenuItem 
               onClick={onSwitchNetwork}
@@ -549,7 +564,7 @@ function TickerTape() {
               {item.marketType === "amm_pool" ? "POOL" : "NEW"}
             </span>
             <span className="text-muted-foreground">
-              ${formatCompactNumber(item.volume24h)}
+              Vol: ${formatCompactNumber(item.volume24h)}
             </span>
           </div>
         ))}

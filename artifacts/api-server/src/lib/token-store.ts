@@ -1191,53 +1191,7 @@ export type LeaderboardEntry = {
 };
 
 export function getLeaderboard(metric = "pnl"): LeaderboardEntry[] {
-  const mockTraders: LeaderboardEntry[] = [
-    {
-      address: "0x1a2e3f4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f",
-      realizedPnl: 98400.5,
-      winRate: 91,
-      tradesCount: 34,
-      volume: 125000,
-      rank: 1,
-      type: "whale",
-    },
-    {
-      address: "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
-      realizedPnl: 45820.2,
-      winRate: 84,
-      tradesCount: 142,
-      volume: 85400,
-      rank: 2,
-      type: "degen",
-    },
-    {
-      address: "0xbb9bc244d798123fde783fcc1c72d3bb8c189413",
-      realizedPnl: 28150.0,
-      winRate: 72,
-      tradesCount: 63,
-      volume: 92000,
-      rank: 3,
-      type: "lp_giant",
-    },
-    {
-      address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
-      realizedPnl: 12450.7,
-      winRate: 65,
-      tradesCount: 28,
-      volume: 31000,
-      rank: 4,
-      type: "degen",
-    },
-    {
-      address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
-      realizedPnl: 6720.4,
-      winRate: 58,
-      tradesCount: 104,
-      volume: 45000,
-      rank: 5,
-      type: "lp_giant",
-    },
-  ];
+  const mockTraders: LeaderboardEntry[] = [];
 
   try {
     const allTrades = db.prepare("SELECT * FROM trades").all() as Record<string, unknown>[];
@@ -1340,37 +1294,7 @@ export function getLeaderboard(metric = "pnl"): LeaderboardEntry[] {
 export function getWalletAnalytics(address: string) {
   const addrLower = address.toLowerCase();
 
-  const mockHoldings: Record<string, any> = {
-    "0x1a2e3f4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f": {
-      realizedPnl: 98400.5,
-      winRate: 91,
-      volume: 125000,
-      tradesCount: 34,
-      holdings: [
-        { tokenId: "arcdog", ticker: "ARCDOG", name: "ARC DOG", logoColor: "#f59e0b", balance: 5000000, value: 210.5, avgEntry: 0.000035 },
-        { tokenId: "arcmoon", ticker: "ARCMOON", name: "ARC MOON", logoColor: "#a855f7", balance: 2000000, value: 184.6, avgEntry: 0.000075 },
-      ]
-    },
-    "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {
-      realizedPnl: 45820.2,
-      winRate: 84,
-      volume: 85400,
-      tradesCount: 142,
-      holdings: [
-        { tokenId: "arcdog", ticker: "ARCDOG", name: "ARC DOG", logoColor: "#f59e0b", balance: 12000000, value: 505.2, avgEntry: 0.000038 },
-        { tokenId: "bonkarc", ticker: "BONKARC", name: "BONK ARC", logoColor: "#eab308", balance: 8000000, value: 53.6, avgEntry: 0.000005 },
-      ]
-    },
-    "0xbb9bc244d798123fde783fcc1c72d3bb8c189413": {
-      realizedPnl: 28150.0,
-      winRate: 72,
-      volume: 92000,
-      tradesCount: 63,
-      holdings: [
-        { tokenId: "mooncat", ticker: "MCAT", name: "MOON CAT", logoColor: "#8b5cf6", balance: 35000000, value: 311.85, avgEntry: 0.0000075 },
-      ]
-    }
-  };
+  const mockHoldings: Record<string, any> = {};
 
   const isMock = addrLower in mockHoldings;
   const mockData = isMock ? mockHoldings[addrLower] : null;

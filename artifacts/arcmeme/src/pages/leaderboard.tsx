@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { useState } from "react";
-import { formatAddress } from "@/lib/utils";
+import { formatAddress, formatCompactNumber } from "@/lib/utils";
 import { useWallet } from "@/hooks/use-wallet";
 
 type LeaderboardEntry = {
@@ -51,6 +51,16 @@ export function LeaderboardPage() {
     },
     refetchInterval: 15000,
   });
+
+  const topEarner = leaderboard.length > 0 
+    ? leaderboard.reduce((prev, current) => (prev.realizedPnl > current.realizedPnl) ? prev : current) 
+    : null;
+  const mostActive = leaderboard.length > 0 
+    ? leaderboard.reduce((prev, current) => (prev.tradesCount > current.tradesCount) ? prev : current) 
+    : null;
+  const lpGiant = leaderboard.length > 0 
+    ? leaderboard.reduce((prev, current) => (prev.volume > current.volume) ? prev : current) 
+    : null;
 
   const handleCopy = (address: string, index: number) => {
     navigator.clipboard.writeText(address);
@@ -150,9 +160,17 @@ export function LeaderboardPage() {
               <span className="font-mono text-xs text-muted-foreground uppercase">Top Earner</span>
               <Trophy className="h-5 w-5 text-yellow-400" />
             </div>
-            <div className="mt-3 text-2xl font-black text-primary font-mono">+$98,400.50</div>
+            <div className="mt-3 text-2xl font-black text-primary font-mono">
+              {topEarner ? `${topEarner.realizedPnl >= 0 ? "+" : ""}$${topEarner.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+            </div>
             <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-              0x1a2e3f4b5c...e0f <span className="text-primary font-bold">(91% WR)</span>
+              {topEarner ? (
+                <>
+                  {formatAddress(topEarner.address)} <span className="text-primary font-bold">({topEarner.winRate}% WR)</span>
+                </>
+              ) : (
+                "No tracked wallets"
+              )}
             </div>
           </CardContent>
         </Card>
@@ -163,9 +181,17 @@ export function LeaderboardPage() {
               <span className="font-mono text-xs text-muted-foreground uppercase">Most Active</span>
               <Activity className="h-5 w-5 text-primary" />
             </div>
-            <div className="mt-3 text-2xl font-black text-foreground font-mono">142 Trades</div>
+            <div className="mt-3 text-2xl font-black text-foreground font-mono">
+              {mostActive ? `${mostActive.tradesCount} Trades` : "0 Trades"}
+            </div>
             <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-              0x7a250d5630...88d <span className="text-primary font-bold">($85.4K VOL)</span>
+              {mostActive ? (
+                <>
+                  {formatAddress(mostActive.address)} <span className="text-primary font-bold">(${formatCompactNumber(mostActive.volume)} VOL)</span>
+                </>
+              ) : (
+                "No tracked wallets"
+              )}
             </div>
           </CardContent>
         </Card>
@@ -176,9 +202,17 @@ export function LeaderboardPage() {
               <span className="font-mono text-xs text-muted-foreground uppercase">LP Giant</span>
               <UserCheck className="h-5 w-5 text-blue-400" />
             </div>
-            <div className="mt-3 text-2xl font-black text-blue-400 font-mono">+$28,150.00</div>
+            <div className="mt-3 text-2xl font-black text-blue-400 font-mono">
+              {lpGiant ? `${lpGiant.realizedPnl >= 0 ? "+" : ""}$${lpGiant.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+            </div>
             <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-              0xbb9bc244d7...413 <span className="text-blue-400 font-bold">(POOL LP)</span>
+              {lpGiant ? (
+                <>
+                  {formatAddress(lpGiant.address)} <span className="text-blue-400 font-bold">(POOL LP)</span>
+                </>
+              ) : (
+                "No tracked wallets"
+              )}
             </div>
           </CardContent>
         </Card>

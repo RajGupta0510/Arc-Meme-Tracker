@@ -156,9 +156,9 @@ export function getArcReadProvider(chainIdOrUrl?: string) {
   if (chainIdOrUrl && chainIdOrUrl.startsWith("http")) {
     return new JsonRpcProvider(chainIdOrUrl);
   }
-  const isOld = chainIdOrUrl ? chainIdOrUrl.toLowerCase() === "0x4e454153" : (typeof window !== "undefined" && window.localStorage.getItem("arcmeme.wallet_chain_id") === "0x4e454153");
-  const rpcUrl = isOld ? "https://testnet-rpc.arcnetwork.io" : "https://rpc.testnet.arc.network";
-  const chainIdNum = isOld ? 1313165651 : 5042002;
+  // The old testnet RPC is decommissioned by the Arc Network team. Route all telemetry to the active RPC.
+  const rpcUrl = "https://rpc.testnet.arc.network";
+  const chainIdNum = 5042002;
   return new JsonRpcProvider(rpcUrl, chainIdNum);
 }
 
@@ -394,12 +394,14 @@ export async function addTokenUsdcLiquidity(params: {
   slippageBps?: number;
   amm?: ArcAmmConfig;
   signer: Signer;
+  nativeDecimals?: number;
 }) {
   const amm = params.amm ?? DEFAULT_ARC_AMM;
   const signerAddress = await params.signer.getAddress();
   const router = getRouterContract(amm, params.signer);
   const tokenAmount = parseUnits(params.tokenAmount, params.tokenDecimals);
-  const wusdcAmount = parseUnits(params.wusdcAmount, 18);
+  const nativeDecimals = params.nativeDecimals ?? 18;
+  const wusdcAmount = parseUnits(params.wusdcAmount, nativeDecimals);
   const slippageBps = BigInt(params.slippageBps ?? 100);
   const amountTokenMin = tokenAmount - (tokenAmount * slippageBps) / 10_000n;
   const amountWusdcMin = wusdcAmount - (wusdcAmount * slippageBps) / 10_000n;

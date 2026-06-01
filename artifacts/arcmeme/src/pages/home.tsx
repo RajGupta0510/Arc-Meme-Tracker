@@ -321,7 +321,9 @@ export function HomePage() {
   const [alerts, setAlerts] = useState<AlertRule[]>(() => readJson("arcmeme.alerts", []));
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window === "undefined") return;
+
+    const handleUrlChange = () => {
       const searchParams = new URLSearchParams(window.location.search);
       
       const filterParam = searchParams.get("filter");
@@ -329,6 +331,8 @@ export function HomePage() {
         setMarketFilter("watchlist");
       } else if (filterParam === "all") {
         setMarketFilter("all");
+      } else if (filterParam === "live") {
+        setMarketFilter("live");
       }
       
       const alertsParam = searchParams.get("alerts");
@@ -340,8 +344,26 @@ export function HomePage() {
         // Clear query parameter silently
         window.history.replaceState({}, document.title, window.location.pathname);
       }
-    }
-  }, [window.location.search, toast]);
+    };
+
+    // Listen to browser back/forward popstate events
+    window.addEventListener("popstate", handleUrlChange);
+
+    // Monkeypatch pushState to catch wouter/programmatic route switches
+    const originalPushState = window.history.pushState;
+    window.history.pushState = function(...args) {
+      originalPushState.apply(this, args);
+      handleUrlChange();
+    };
+
+    // Run initial query param sync on mount
+    handleUrlChange();
+
+    return () => {
+      window.removeEventListener("popstate", handleUrlChange);
+      window.history.pushState = originalPushState;
+    };
+  }, [toast]);
   const [alertDraft, setAlertDraft] = useState("");
   const [alertMetric, setAlertMetric] = useState<AlertRule["metric"]>("price_above");
   const [alertTokenId, setAlertTokenId] = useState("");
@@ -784,7 +806,7 @@ function StatBox({ label, value, icon, active = false }: { label: string; value:
     <div className="rounded-lg border border-border/70 bg-background/45 p-3 flex items-start justify-between group hover:border-primary/30 transition-all duration-300">
       <div>
         <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{label}</div>
-        <div className={`mt-1 font-mono text-base font-bold ${active ? "text-primary drop-shadow-[0_0_8px_rgba(34,197,94,0.3)]" : "text-foreground/90"}`}>{value}</div>
+        <div className={`mt-1 font-mono text-base font-bold ${active ? "bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(34,197,94,0.3)]" : "text-foreground/90"}`}>{value}</div>
       </div>
       <div className="opacity-70 group-hover:opacity-100 transition-opacity duration-300 mt-0.5">
         {icon}
