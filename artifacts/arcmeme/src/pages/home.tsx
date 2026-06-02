@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
 import { useToast } from "@/hooks/use-toast";
+import { useLiveTokenData } from "@/hooks/use-live-token-data";
 
 type ViewMode = "grid" | "table";
 type MarketFilter = "all" | "live" | "needs-pool" | "watchlist";
@@ -222,6 +223,133 @@ function TerminalActivityFeed() {
         </div>
       </div>
     </div>
+  );
+}
+
+function TrendingCard({
+  token,
+  setLocation,
+  index,
+}: {
+  token: Token;
+  setLocation: (loc: string) => void;
+  index: number;
+}) {
+  const live = useLiveTokenData(token);
+  const accentColor = token.logoColor || "#22c55e";
+  const isPositive = live.change24h >= 0;
+
+  return (
+    <div
+      onClick={() => setLocation(`/token/${token.id}`)}
+      key={token.id}
+      className="relative overflow-hidden p-3.5 glass-panel border border-border/70 hover:border-primary/50 bg-card/40 hover:bg-card/75 transition-all duration-300 group flex items-center justify-between cursor-pointer"
+    >
+      <div className="flex items-center gap-3">
+        <div className="text-xs font-mono font-bold text-muted-foreground">#0{index + 1}</div>
+        <TokenLogo token={token} size="sm" />
+        <div>
+          <div className="font-bold text-sm tracking-tight flex items-center gap-1.5 font-mono">
+            <span style={{ color: accentColor }} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.05)]">${token.ticker}</span>
+          </div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Vol: ${formatCompactNumber(live.allTimeVolume)}</div>
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="font-mono text-xs font-bold text-foreground/90">${formatPrice(live.price)}</div>
+        <div className={`font-mono text-[10px] font-bold ${isPositive ? "text-primary" : "text-destructive"}`}>
+          {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{live.change24h.toFixed(2)}%
+        </div>
+      </div>
+      {/* Subtle Dynamic Bottom Accent Line */}
+      <div className="absolute bottom-0 left-0 right-0 h-[2px] transition-all duration-300" style={{ backgroundColor: accentColor, opacity: 0.35 }} />
+    </div>
+  );
+}
+
+function TokenTableRow({
+  token,
+  watchlist,
+  toggleWatch,
+  setLocation,
+}: {
+  token: Token;
+  watchlist: string[];
+  toggleWatch: (id: string) => void;
+  setLocation: (loc: string) => void;
+}) {
+  const live = useLiveTokenData(token);
+  const buys = Math.ceil(token.txCount * 0.54);
+  const sells = Math.max(0, token.txCount - buys);
+  const totalTx = buys + sells;
+  const buyPercent = totalTx > 0 ? (buys / totalTx) * 100 : 50;
+  const sellPercent = 100 - buyPercent;
+  const ageHours = Math.max(0, Math.floor((Date.now() - new Date(token.createdAt).getTime()) / 3_600_000));
+  const accentColor = token.logoColor || "#22c55e";
+
+  return (
+    <tr
+      onClick={(e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest("button") || target.closest("a")) return;
+        setLocation(`/token/${token.id}`);
+      }}
+      className="group rounded-lg bg-card/35 transition-all duration-300 hover:bg-card/75 border border-border/20 cursor-pointer"
+    >
+      <td className="rounded-l-lg px-3 py-3 border-y border-l border-border/30">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); toggleWatch(token.id); }}
+            className={watchlist.includes(token.id) ? "text-yellow-400" : "text-muted-foreground/60 hover:text-yellow-400 transition-colors"}
+          >
+            <Star className="h-3.5 w-3.5" fill={watchlist.includes(token.id) ? "currentColor" : "none"} />
+          </button>
+          <div>
+            <div className="font-bold font-mono" style={{ color: accentColor }}>${token.ticker}</div>
+            <div className="font-mono text-[9px] text-muted-foreground/80 mt-0.5">{formatAddress(token.contractAddress ?? "")}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2 border-y border-border/30">
+        <MiniSparkline token={token} accentColor={accentColor} />
+      </td>
+      <LivePriceCell price={live.price} />
+      <td className={`px-3 py-2 text-right font-mono font-bold border-y border-border/30 ${live.change24h >= 0 ? "text-primary" : "text-destructive"}`}>
+        {live.change24h >= 0 ? "▲ +" : "▼ "}{live.change24h.toFixed(2)}%
+      </td>
+      <td className="px-3 py-2 text-right font-mono font-bold text-foreground/80 border-y border-border/30">
+        ${formatCompactNumber(live.marketCap)}
+      </td>
+      <td className="px-3 py-2 text-right font-mono border-y border-border/30">
+        <div className="flex flex-col items-end justify-center">
+          <span className="font-bold text-foreground/80">${formatCompactNumber(live.allTimeVolume)}</span>
+          <span className="text-[9px] text-muted-foreground font-normal">24h: ${formatCompactNumber(live.volume24h)}</span>
+        </div>
+      </td>
+      <td className="px-3 py-2 text-right font-mono border-y border-border/30">
+        <div className="flex flex-col items-end gap-1">
+          <div className="w-16 h-1.5 rounded-full bg-destructive/20 border border-border/20 flex overflow-hidden">
+            <div className="h-full bg-primary" style={{ width: `${buyPercent}%` }} />
+            <div className="h-full bg-destructive" style={{ width: `${sellPercent}%` }} />
+          </div>
+          <div className="font-mono text-[9px] text-muted-foreground">
+            <span className="text-primary font-semibold">{buys}</span> / <span className="text-destructive font-semibold">{sells}</span>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2 text-right font-mono text-foreground/75 border-y border-border/30">
+        {token.holders.toLocaleString()}
+      </td>
+      <td className="px-3 py-2 text-right font-mono text-muted-foreground border-y border-border/30">
+        {ageHours < 1 ? "<1h" : `${ageHours}h`}
+      </td>
+      <td className="rounded-r-lg px-3 py-2 text-right border-y border-r border-border/30">
+        <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-full hover:bg-secondary/40">
+          <Link href={`/token/${token.id}`}><ArrowUpRight className="h-4 w-4" style={{ color: accentColor }} /></Link>
+        </Button>
+      </td>
+    </tr>
   );
 }
 
@@ -465,36 +593,9 @@ export function HomePage() {
               <Flame className="h-3.5 w-3.5 text-primary" /> Trending Volume Leaders
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {trendingTokens.map((token, i) => {
-                const accentColor = token.logoColor || "#22c55e";
-                const isPositive = token.change24h >= 0;
-                return (
-                  <div
-                    onClick={() => setLocation(`/token/${token.id}`)}
-                    key={token.id}
-                    className="relative overflow-hidden p-3.5 glass-panel border border-border/70 hover:border-primary/50 bg-card/40 hover:bg-card/75 transition-all duration-300 group flex items-center justify-between cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="text-xs font-mono font-bold text-muted-foreground">#0{i+1}</div>
-                      <TokenLogo token={token} size="sm" />
-                      <div>
-                        <div className="font-bold text-sm tracking-tight flex items-center gap-1.5 font-mono">
-                          <span style={{ color: accentColor }} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.05)]">${token.ticker}</span>
-                        </div>
-                        <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Vol: ${formatCompactNumber(token.volume24h)}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono text-xs font-bold text-foreground/90">${formatPrice(token.price)}</div>
-                      <div className={`font-mono text-[10px] font-bold ${isPositive ? "text-primary" : "text-destructive"}`}>
-                        {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{token.change24h.toFixed(2)}%
-                      </div>
-                    </div>
-                    {/* Subtle Dynamic Bottom Accent Line */}
-                    <div className="absolute bottom-0 left-0 right-0 h-[2px] transition-all duration-300" style={{ backgroundColor: accentColor, opacity: 0.35 }} />
-                  </div>
-                );
-              })}
+              {trendingTokens.map((token, i) => (
+                <TrendingCard key={token.id} token={token} setLocation={setLocation} index={i} />
+              ))}
             </div>
           </section>
         )}
@@ -635,7 +736,7 @@ export function HomePage() {
                         <th className="px-3 py-2 text-right">Price</th>
                         <th className="px-3 py-2 text-right">Change</th>
                         <th className="px-3 py-2 text-right">MCap</th>
-                        <th className="px-3 py-2 text-right">Volume</th>
+                        <th className="px-3 py-2 text-right">Volume (All-Time / 24h)</th>
                         <th className="px-3 py-2 text-right">Buys/Sells</th>
                         <th className="px-3 py-2 text-right">Holders</th>
                         <th className="px-3 py-2 text-right">Age</th>
@@ -643,80 +744,15 @@ export function HomePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredTokens.map((token) => {
-                        const live = token.marketType === "amm_pool" && Boolean(token.pairAddress);
-                        const buys = Math.ceil(token.txCount * 0.54);
-                        const sells = Math.max(0, token.txCount - buys);
-                        const totalTx = buys + sells;
-                        const buyPercent = totalTx > 0 ? (buys / totalTx) * 100 : 50;
-                        const sellPercent = 100 - buyPercent;
-                        const ageHours = Math.max(0, Math.floor((Date.now() - new Date(token.createdAt).getTime()) / 3_600_000));
-                        const accentColor = token.logoColor || "#22c55e";
-
-                        return (
-                          <tr
-                            key={token.id}
-                            onClick={(e) => {
-                              const target = e.target as HTMLElement;
-                              if (target.closest("button") || target.closest("a")) return;
-                              setLocation(`/token/${token.id}`);
-                            }}
-                            className="group rounded-lg bg-card/35 transition-all duration-300 hover:bg-card/75 border border-border/20 cursor-pointer"
-                          >
-                            <td className="rounded-l-lg px-3 py-3 border-y border-l border-border/30">
-                              <div className="flex items-center gap-2.5">
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); toggleWatch(token.id); }}
-                                  className={watchlist.includes(token.id) ? "text-yellow-400" : "text-muted-foreground/60 hover:text-yellow-400 transition-colors"}
-                                >
-                                  <Star className="h-3.5 w-3.5" fill={watchlist.includes(token.id) ? "currentColor" : "none"} />
-                                </button>
-                                <div>
-                                  <div className="font-bold font-mono" style={{ color: accentColor }}>${token.ticker}</div>
-                                  <div className="font-mono text-[9px] text-muted-foreground/80 mt-0.5">{formatAddress(token.contractAddress ?? "")}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 border-y border-border/30">
-                              <MiniSparkline token={token} accentColor={accentColor} />
-                            </td>
-                            <LivePriceCell price={token.price} />
-                            <td className={`px-3 py-2 text-right font-mono font-bold border-y border-border/30 ${token.change24h >= 0 ? "text-primary" : "text-destructive"}`}>
-                              {token.change24h >= 0 ? "▲ +" : "▼ "}{token.change24h.toFixed(2)}%
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-foreground/80 border-y border-border/30">
-                              ${formatCompactNumber(token.marketCap)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-foreground/80 border-y border-border/30">
-                              ${formatCompactNumber(token.volume24h)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono border-y border-border/30">
-                              {/* Sleek Visual buy/sell ratio progress meter */}
-                              <div className="flex flex-col items-end gap-1">
-                                <div className="w-16 h-1.5 rounded-full bg-destructive/20 border border-border/20 flex overflow-hidden">
-                                  <div className="h-full bg-primary" style={{ width: `${buyPercent}%` }} />
-                                  <div className="h-full bg-destructive" style={{ width: `${sellPercent}%` }} />
-                                </div>
-                                <div className="font-mono text-[9px] text-muted-foreground">
-                                  <span className="text-primary font-semibold">{buys}</span> / <span className="text-destructive font-semibold">{sells}</span>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-foreground/75 border-y border-border/30">
-                              {token.holders.toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-muted-foreground border-y border-border/30">
-                              {ageHours < 1 ? "<1h" : `${ageHours}h`}
-                            </td>
-                            <td className="rounded-r-lg px-3 py-2 text-right border-y border-r border-border/30">
-                              <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-full hover:bg-secondary/40">
-                                <Link href={`/token/${token.id}`}><ArrowUpRight className="h-4 w-4" style={{ color: accentColor }} /></Link>
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {filteredTokens.map((token) => (
+                        <TokenTableRow
+                          key={token.id}
+                          token={token}
+                          watchlist={watchlist}
+                          toggleWatch={toggleWatch}
+                          setLocation={setLocation}
+                        />
+                      ))}
                     </tbody>
                   </table>
                 </div>

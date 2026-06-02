@@ -4,6 +4,7 @@ import type { Token } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { Star } from "lucide-react";
+import { useLiveTokenData } from "@/hooks/use-live-token-data";
 
 function safeNumber(value: unknown) {
   const number = typeof value === "number" ? value : Number(value);
@@ -61,10 +62,13 @@ export function TokenCard({
   watched?: boolean;
   onToggleWatch?: (id: string) => void;
 }) {
-  const price = safeNumber(token.price);
-  const change24h = safeNumber(token.change24h);
-  const marketCap = safeNumber(token.marketCap);
-  const volume24h = safeNumber(token.volume24h);
+  const live = useLiveTokenData(token);
+  const price = safeNumber(live.price);
+  const change24h = safeNumber(live.change24h);
+  const marketCap = safeNumber(live.marketCap);
+  const volume24h = safeNumber(live.volume24h);
+  const allTimeVolume = safeNumber(live.allTimeVolume);
+  
   const ticker = token.ticker || "TOKEN";
   const isPositive = change24h >= 0;
   const isLive = token.marketType === "amm_pool" && Boolean(token.pairAddress);
@@ -123,8 +127,11 @@ export function TokenCard({
               <span className="text-xs font-bold text-foreground/80">${formatCompactNumber(marketCap)}</span>
             </div>
             <div className="flex flex-col bg-background/20 p-2 rounded border border-border/20">
-              <span className="text-[9px] uppercase text-muted-foreground tracking-wider">Vol (24h)</span>
-              <span className="text-xs font-bold text-foreground/80">${formatCompactNumber(volume24h)}</span>
+              <span className="text-[9px] uppercase text-muted-foreground tracking-wider">Volume (All-Time / 24h)</span>
+              <span className="text-xs font-bold text-foreground/80 flex flex-col">
+                <span>${formatCompactNumber(allTimeVolume)}</span>
+                <span className="text-[9px] text-muted-foreground font-normal">24h: ${formatCompactNumber(volume24h)}</span>
+              </span>
             </div>
           </div>
 

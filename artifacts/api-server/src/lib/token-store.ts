@@ -46,6 +46,7 @@ export type Token = {
   riskFlags?: string;
   signals?: string;
   hypeScore?: number;
+  allTimeVolume?: number;
 };
 
 export type Trade = {
@@ -454,7 +455,31 @@ export async function listTokens(sort = "trending", limit = 50): Promise<Token[]
   }
 
   const rows = await db.select().from(tokensTable).where(launchedTokenWhere);
-  const allTokens: Token[] = rows.map(rowToToken);
+
+  // Fetch all-time volumes for all tokens using a single aggregate query
+  let volumeMap: Record<string, number> = {};
+  try {
+    const volumeRows = await db.select({
+      tokenId: tradesTable.tokenId,
+      totalVolume: sql<number>`SUM(${tradesTable.wusdcAmount})`,
+    })
+    .from(tradesTable)
+    .groupBy(tradesTable.tokenId);
+
+    for (const vRow of volumeRows) {
+      volumeMap[vRow.tokenId] = Number(vRow.totalVolume || 0);
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch aggregate all-time volumes");
+  }
+
+  const allTokens: Token[] = rows.map((row) => {
+    const token = rowToToken(row);
+    return {
+      ...token,
+      allTimeVolume: volumeMap[token.id] ?? 0,
+    };
+  });
 
   let sorted: Token[] = [];
 
@@ -614,7 +639,26 @@ export async function getLatestTradeBlock(tokenId: string): Promise<number | nul
 
 export async function getToken(id: string): Promise<Token | null> {
   const rows = await db.select().from(tokensTable).where(eq(tokensTable.id, id));
-  return rows[0] ? rowToToken(rows[0]) : null;
+  if (!rows[0]) return null;
+  const token = rowToToken(rows[0]);
+  
+  // Calculate all-time volume for this single token
+  let allTimeVolume = 0;
+  try {
+    const volRes = await db.select({
+      totalVolume: sql<number>`SUM(${tradesTable.wusdcAmount})`,
+    })
+    .from(tradesTable)
+    .where(eq(tradesTable.tokenId, id));
+    allTimeVolume = Number(volRes[0]?.totalVolume || 0);
+  } catch (err) {
+    logger.error({ err, id }, "Failed to fetch all-time volume for token");
+  }
+
+  return {
+    ...token,
+    allTimeVolume,
+  };
 }
 
 export async function createToken(input: TokenInput): Promise<Token> {
