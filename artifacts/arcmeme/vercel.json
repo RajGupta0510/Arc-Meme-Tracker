@@ -1,13 +1,17 @@
 {
   "cleanUrls": true,
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "https://arc-meme-tracker.onrender.com/api/:path*"
+      "src": "/api/(.*)",
+      "dest": "https://arc-meme-tracker.onrender.com/api/$1"
     },
     {
-      "source": "/((?!api/|index\\.html|assets/).*)",
-      "destination": "/index.html"
+      "src": "/(assets/.*|.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|json|webmanifest|woff2?))",
+      "dest": "/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }
