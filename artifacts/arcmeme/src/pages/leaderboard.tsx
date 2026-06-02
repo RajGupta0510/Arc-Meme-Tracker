@@ -132,7 +132,7 @@ export function LeaderboardPage() {
             Arc Trading Arena
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight font-sans bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">
-            DEGEN LEADERBOARD
+            ARENA LEADERBOARD
           </h1>
           <p className="text-muted-foreground text-sm max-w-xl mt-1">
             Track top-performing smart money wallets, high-frequency traders, and meme pool snipers on the Arc blockchain.

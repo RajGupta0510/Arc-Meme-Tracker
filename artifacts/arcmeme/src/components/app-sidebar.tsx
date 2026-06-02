@@ -1,10 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { Activity, BarChart3, Bell, PlusCircle, Radar, Star, WalletCards } from "lucide-react";
+import { Activity, BarChart3, Bell, PlusCircle, Radar, Star, WalletCards, Trophy } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Terminal", icon: BarChart3 },
   { href: "/portfolio", label: "Portfolio", icon: WalletCards },
   { href: "/launch", label: "Launch", icon: PlusCircle },
+  { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 
 export function AppSidebar() {
