@@ -468,6 +468,15 @@ export function TokenDetailPage() {
     usdcBalance !== null && Number.isFinite(Number(usdcBalance)) ? Number(usdcBalance) : null;
 
   const displayPrice = market.price ?? token?.price ?? 0;
+  const isLivePriceLoading = Boolean(token?.marketType === "amm_pool" && token?.pairAddress && market.price === null && market.isLoading);
+
+  const displayMarketCap = displayPrice * (token?.totalSupply ?? 0);
+  const initialPrice = token ? token.price / (1 + token.change24h / 100) : 0;
+  const displayChange24h = initialPrice > 0 
+    ? ((displayPrice - initialPrice) / initialPrice) * 100 
+    : (token?.change24h ?? 0);
+  const isPositive = displayChange24h >= 0;
+
   const poolUsdcReserve = market.reserves
     ? formatBalance(formatUnits(market.reserves.quoteReserve, nativeDecimals))
     : null;
@@ -814,7 +823,6 @@ export function TokenDetailPage() {
 
 
 
-  const isPositive = token ? token.change24h >= 0 : false;
   const isTradingPending =
     trade.status.status === "quoting" ||
     trade.status.status === "approving" ||
@@ -1137,24 +1145,31 @@ export function TokenDetailPage() {
             </div>
 
             <div className="flex items-center gap-4 text-right">
-              <div>
-                <div
-                  className={`text-2xl font-mono font-extrabold transition-all duration-300 ${
-                    priceFlash === "up"
-                      ? "text-primary scale-105 drop-shadow-[0_0_12px_rgba(34,197,94,0.5)]"
-                      : priceFlash === "down"
-                      ? "text-destructive scale-105 drop-shadow-[0_0_12px_rgba(239,68,68,0.5)]"
-                      : "text-foreground"
-                  }`}
-                >
-                  ${formatPrice(displayPrice)}
+              {isLivePriceLoading ? (
+                <div className="flex flex-col items-end gap-1.5">
+                  <div className="h-7 w-28 bg-secondary/40 animate-pulse rounded" />
+                  <div className="h-4 w-16 bg-secondary/40 animate-pulse rounded" />
                 </div>
-                <div className="flex items-center gap-1.5 justify-end font-mono text-xs font-bold mt-0.5">
-                  <span className={isPositive ? "text-primary" : "text-destructive"}>
-                    {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{token.change24h.toFixed(2)}%
-                  </span>
+              ) : (
+                <div>
+                  <div
+                    className={`text-2xl font-mono font-extrabold transition-all duration-300 ${
+                      priceFlash === "up"
+                        ? "text-primary scale-105 drop-shadow-[0_0_12px_rgba(34,197,94,0.5)]"
+                        : priceFlash === "down"
+                        ? "text-destructive scale-105 drop-shadow-[0_0_12px_rgba(239,68,68,0.5)]"
+                        : "text-foreground"
+                    }`}
+                  >
+                    ${formatPrice(displayPrice)}
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-end font-mono text-xs font-bold mt-0.5">
+                    <span className={isPositive ? "text-primary" : "text-destructive"}>
+                      {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{displayChange24h.toFixed(2)}%
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -1174,11 +1189,11 @@ export function TokenDetailPage() {
 
           {/* Stats strip */}
           <div className="w-full grid grid-cols-2 md:grid-cols-6 gap-2 bg-card/40 border border-border/80 rounded-xl p-3.5 backdrop-blur-md font-mono text-xs shadow-sm">
-            <StatStripBox label="Price USD" value={`$${formatPrice(displayPrice)}`} highlight />
-            <StatStripBox label="Liquidity" value={poolUsdcReserve ? `$${formatCompactNumber(Number(poolUsdcReserve) * 2)}` : "$0"} />
-            <StatStripBox label="Market Cap" value={`$${formatCompactNumber(token.marketCap)}`} />
+            <StatStripBox label="Price USD" value={`$${formatPrice(displayPrice)}`} highlight loading={isLivePriceLoading} />
+            <StatStripBox label="Liquidity" value={poolUsdcReserve ? `$${formatCompactNumber(Number(poolUsdcReserve) * 2)}` : "$0"} loading={isLivePriceLoading} />
+            <StatStripBox label="Market Cap" value={`$${formatCompactNumber(displayMarketCap)}`} loading={isLivePriceLoading} />
             <StatStripBox label="24h Volume" value={`$${formatCompactNumber(token.volume24h)}`} />
-            <StatStripBox label="24h Change" value={`${isPositive ? "+" : ""}${token.change24h.toFixed(2)}%`} greenStyle={isPositive} />
+            <StatStripBox label="24h Change" value={`${isPositive ? "+" : ""}${displayChange24h.toFixed(2)}%`} greenStyle={isPositive} loading={isLivePriceLoading} />
             <StatStripBox label="Total Swaps" value={token.txCount.toLocaleString()} />
           </div>
         </div>
@@ -2433,27 +2448,33 @@ function StatStripBox({
   label, 
   value, 
   highlight = false, 
-  greenStyle = null 
+  greenStyle = null,
+  loading = false
 }: { 
   label: string; 
   value: string; 
   highlight?: boolean; 
   greenStyle?: boolean | null;
+  loading?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1 p-2 bg-background/30 rounded-lg border border-border/20 text-center md:text-left">
       <span className="text-[9px] uppercase tracking-widest text-muted-foreground/80 font-bold">{label}</span>
-      <span className={`font-bold font-mono tracking-tight ${
-        highlight 
-          ? "text-primary text-[13px] drop-shadow-[0_0_8px_rgba(34,197,94,0.2)]" 
-          : greenStyle === true 
-          ? "text-primary font-bold" 
-          : greenStyle === false 
-          ? "text-destructive font-bold" 
-          : "text-foreground"
-      }`}>
-        {value}
-      </span>
+      {loading ? (
+        <div className="h-4 w-16 bg-secondary/35 animate-pulse rounded mx-auto md:mx-0 mt-0.5" />
+      ) : (
+        <span className={`font-bold font-mono tracking-tight ${
+          highlight 
+            ? "text-primary text-[13px] drop-shadow-[0_0_8px_rgba(34,197,94,0.2)]" 
+            : greenStyle === true 
+            ? "text-primary font-bold" 
+            : greenStyle === false 
+            ? "text-destructive font-bold" 
+            : "text-foreground"
+        }`}>
+          {value}
+        </span>
+      )}
     </div>
   );
 }
