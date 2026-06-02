@@ -1,4 +1,6 @@
-import { getToken, getTokens, getAllTokens, listTrades, db, type Token, type Trade } from "./token-store";
+import { eq, asc } from "drizzle-orm";
+import { db, tradesTable } from "@workspace/db";
+import { getToken, getTokens, getAllTokens, listTrades, type Token, type Trade } from "./token-store";
 import { formatUnits, parseUnits } from "ethers";
 import { logger } from "./logger";
 
@@ -72,23 +74,19 @@ function parseTradeCommand(text: string): { side: "buy" | "sell"; amount: number
 /**
  * Computes AMM trade quotes for AI Trade Assistant
  */
-function computeTradeQuote(
+async function computeTradeQuote(
   token: Token,
   side: "buy" | "sell",
   inputAmount: number
-): AIResponse["action"] | null {
+): Promise<AIResponse["action"] | null> {
   if (!token.pairAddress || !token.contractAddress) return null;
 
   try {
-    // 1. Get reserves from trades or simulation
-    // Let's query from trades first to get current AMM reserves
-    // We can also compute the reserves by summing up trades or reading from active database
-    // For simplicity, we can fetch pool token reserves
-    // Let's compute current reserves based on initial pool seeding and swaps
-    const trades = db.prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber ASC, logIndex ASC").all(token.id) as any[];
+    // 1. Get reserves from trades
+    const trades = await db.select().from(tradesTable)
+      .where(eq(tradesTable.tokenId, token.id))
+      .orderBy(asc(tradesTable.blockNumber), asc(tradesTable.logIndex));
     
-    // Default initial seed values (ApexiSwap seed: 10% of total supply + 40 USDC or custom)
-    // If no trades, use fallbacks. If trades exist, compute the exact reserves after swaps!
     let baseReserve = token.totalSupply * 0.1; // 10%
     let quoteReserve = 40.0; // 40 USDC seed
     
@@ -110,16 +108,9 @@ function computeTradeQuote(
     let priceImpact = 0;
 
     if (side === "buy") {
-      // Constant Product Formula: (X * Y) = K
-      // Buy token using USDC (quoteReserve is X, baseReserve is Y)
-      // Input is inputAmount (USDC)
-      // expectedOutput = baseReserve - (baseReserve * quoteReserve) / (quoteReserve + inputAmount)
       expectedOutput = baseReserve - (baseReserve * quoteReserve) / (quoteReserve + inputAmount);
       priceImpact = (inputAmount / quoteReserve) * 100;
     } else {
-      // Sell token for USDC
-      // Input is inputAmount (Tokens)
-      // expectedOutput = quoteReserve - (quoteReserve * baseReserve) / (baseReserve + inputAmount)
       expectedOutput = quoteReserve - (quoteReserve * baseReserve) / (baseReserve + inputAmount);
       priceImpact = (inputAmount / baseReserve) * 100;
     }
@@ -143,15 +134,11 @@ function computeTradeQuote(
 }
 
 /**
- * Handles quick actions and natural language prompts
- */
-/**
  * Detects if a token is explicitly mentioned in the prompt
  */
-function detectTokenFromPrompt(prompt: string): Token | null {
+async function detectTokenFromPrompt(prompt: string): Promise<Token | null> {
   const normalized = prompt.toLowerCase();
-  const tokens = getAllTokens();
-  // Sort tokens by ticker length descending to avoid substring conflicts (e.g. "RAJ" vs "RA")
+  const tokens = await getAllTokens();
   const sortedTokens = [...tokens].sort((a, b) => b.ticker.length - a.ticker.length);
   
   for (const t of sortedTokens) {
@@ -172,11 +159,9 @@ function detectTokenFromPrompt(prompt: string): Token | null {
  * Handles quick actions and natural language prompts
  */
 export async function generateCopilotResponse(tokenId: string, prompt: string): Promise<AIResponse> {
-  // 1. Parse prompt to detect target token override
-  const detectedToken = detectTokenFromPrompt(prompt);
+  const detectedToken = await detectTokenFromPrompt(prompt);
   
-  // 2. Resolve token context (prefer explicitly detected token, fallback to current page context)
-  const token = detectedToken || (tokenId && tokenId !== "all" && tokenId !== "global" ? getToken(tokenId) : null);
+  const token = detectedToken || (tokenId && tokenId !== "all" && tokenId !== "global" ? await getToken(tokenId) : null);
   
   if (!token) {
     const promptLower = prompt.toLowerCase().trim();
@@ -194,8 +179,7 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
       };
     }
     
-    // Generate beautiful global report
-    const allTokens = getTokens();
+    const allTokens = await getTokens();
     let tokenRows = "";
     allTokens.forEach((t) => {
       const changeSymbol = t.change24h >= 0 ? "▲" : "▼";
@@ -213,7 +197,7 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
   // --- 1. TRADE ASSISTANT INTERCEPTOR ---
   const tradeRequest = parseTradeCommand(prompt);
   if (tradeRequest) {
-    const quote = computeTradeQuote(token, tradeRequest.side, tradeRequest.amount);
+    const quote = await computeTradeQuote(token, tradeRequest.side, tradeRequest.amount);
     if (quote) {
       const sideText = tradeRequest.side === "buy" ? "Buy" : "Sell";
       const sizeText = tradeRequest.side === "buy" ? `${tradeRequest.amount} USDC` : `${tradeRequest.amount.toLocaleString()} $${ticker}`;
@@ -236,10 +220,8 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
   if (promptLower === "analyze token" || promptLower.includes("why is this pumping") || promptLower.includes("why is it pumping") || promptLower.includes("why is tt pumping")) {
     const direction = token.change24h >= 0 ? "bullish" : "bearish";
     const changeSymbol = token.change24h >= 0 ? "▲" : "▼";
-    const changeColor = token.change24h >= 0 ? "green" : "red";
     
-    // Get recent trades for context
-    const recentTrades = listTrades(tokenId, 10);
+    const recentTrades = await listTrades(token.id, 10);
     const buys = recentTrades.filter(t => t.side === "buy").length;
     const sells = recentTrades.length - buys;
 
@@ -259,7 +241,7 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
 
   // B. WHALE ACTIVITY
   if (promptLower === "whale activity" || promptLower.includes("whale")) {
-    const trades = listTrades(tokenId, 100);
+    const trades = await listTrades(token.id, 100);
     const whaleSwaps = trades.filter(t => t.wusdcAmount >= 25);
 
     if (whaleSwaps.length === 0) {
@@ -308,7 +290,7 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
 
   // D. HOLDER ANALYSIS
   if (promptLower === "holder analysis" || promptLower.includes("holder") || promptLower.includes("holders")) {
-    const trades = listTrades(tokenId, 100);
+    const trades = await listTrades(token.id, 100);
     const balances: Record<string, number> = {};
     for (const t of trades) {
       const addr = t.traderAddress.toLowerCase();
@@ -341,8 +323,7 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
       };
     }
 
-    // Query trades to reconstruct reserve depth
-    const trades = listTrades(tokenId, 100);
+    const trades = await listTrades(token.id, 100);
     let baseReserve = token.totalSupply * 0.1;
     let quoteReserve = 40.0;
     
@@ -366,7 +347,7 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
 
   // F. RECENT TRADES
   if (promptLower === "recent trades" || promptLower.includes("trades") || promptLower.includes("transactions")) {
-    const recentTrades = listTrades(tokenId, 5);
+    const recentTrades = await listTrades(token.id, 5);
 
     if (recentTrades.length === 0) {
       return {
@@ -387,7 +368,7 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
 
   // G. VOLUME ANALYSIS
   if (promptLower === "volume analysis" || promptLower.includes("volume")) {
-    const recentTrades = listTrades(tokenId, 100);
+    const recentTrades = await listTrades(token.id, 100);
     const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const trades24h = recentTrades.filter(t => t.timestamp >= cutoff24h);
     const vol24h = trades24h.reduce((sum, t) => sum + t.wusdcAmount, 0);
@@ -400,10 +381,9 @@ export async function generateCopilotResponse(tokenId: string, prompt: string): 
     };
   }
 
-  // H. COMPARE TOKEN VERSUS ANOTHER TOKEN (e.g. "compare tt vs mg")
+  // H. COMPARE TOKEN VERSUS ANOTHER TOKEN
   if (promptLower.includes("compare") || (promptLower.includes("tt") && promptLower.includes("mg"))) {
-    // Let's resolve the target tokens dynamically by ticker
-    const allTokens = getTokens();
+    const allTokens = await getTokens();
     const ttToken = allTokens.find((t) => t.ticker.toLowerCase() === "tt");
     const mgToken = allTokens.find((t) => t.ticker.toLowerCase() === "mg");
 

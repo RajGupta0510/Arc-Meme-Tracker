@@ -1,5 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { Wallet, JsonRpcProvider, parseUnits } from "ethers";
+import { eq, desc, asc, sql } from "drizzle-orm";
+import { db, tradesTable, tokensTable } from "@workspace/db";
 import {
   ListTokensQueryParams,
   LaunchTokenBody,
@@ -16,7 +18,6 @@ import {
   listTokens,
   updateTokenMarket,
   type Token,
-  db,
   getCommentsForToken,
   saveComment,
   toggleEmojiReaction,
@@ -100,7 +101,7 @@ router.get("/tokens", async (req, res): Promise<void> => {
     const query = ListTokensQueryParams.safeParse(req.query);
     const sort = query.success ? query.data.sort : "trending";
     const limit = query.success && query.data.limit ? query.data.limit : 50;
-    const tokens = listTokens(sort, limit);
+    const tokens = await listTokens(sort, limit);
 
     logger.info({ sort, limit, count: tokens.length }, "GET /api/tokens");
     res.json(tokens);
@@ -134,7 +135,7 @@ router.post("/tokens", async (req, res): Promise<void> => {
       creatorAddress,
     } = parsed.data;
 
-    const newToken: Token = createToken({
+    const newToken: Token = await createToken({
       name,
       ticker,
       price: 0.000001,
@@ -175,7 +176,7 @@ router.post("/tokens", async (req, res): Promise<void> => {
 
 router.get("/tokens/trending", async (_req, res): Promise<void> => {
   try {
-    res.json(listTokens("trending", 6));
+    res.json(await listTokens("trending", 6));
   } catch (err) {
     logger.error({ err }, "GET /api/tokens/trending failed");
     res.status(200).json([]);
@@ -190,7 +191,7 @@ router.get("/tokens/:id", async (req, res): Promise<void> => {
       return;
     }
 
-    const token = getToken(params.data.id);
+    const token = await getToken(params.data.id);
     if (!token) {
       res.status(404).json({ error: "Token not found" });
       return;
@@ -219,7 +220,7 @@ router.patch("/tokens/:id/market", async (req, res): Promise<void> => {
       return;
     }
 
-    const token = updateTokenMarket(id, parsed.data);
+    const token = await updateTokenMarket(id, parsed.data);
     if (!token) {
       res.status(404).json({ error: "Token not found" });
       return;
@@ -252,7 +253,7 @@ router.get("/tokens/:id/trades", async (req, res): Promise<void> => {
       return;
     }
 
-    const token = getToken(params.data.id);
+    const token = await getToken(params.data.id);
     if (!token) {
       res.status(404).json({ error: "Token not found" });
       return;
@@ -276,7 +277,7 @@ router.get("/tokens/:id/trades", async (req, res): Promise<void> => {
         });
     }
 
-    res.json(listTrades(token.id, 50));
+    res.json(await listTrades(token.id, 50));
   } catch (err) {
     const details = getErrorPayload(err);
     logger.error({ err, id: req.params.id }, "GET /api/tokens/:id/trades failed");
@@ -284,7 +285,7 @@ router.get("/tokens/:id/trades", async (req, res): Promise<void> => {
   }
 });
 
-async function indexTokenTradesIfTradeable(token: Token, res: Response) {
+async function indexTokenTradesIfTradeable(token: Token) {
   if (token.marketType !== "amm_pool" || !token.pairAddress || !token.contractAddress) return;
 
   indexTokenSwapEvents(token)
@@ -313,14 +314,14 @@ router.get("/tokens/:id/candles", async (req, res): Promise<void> => {
     }
 
     const interval = isCandleInterval(req.query.interval) ? req.query.interval : "1m";
-    const token = getToken(params.data.id);
+    const token = await getToken(params.data.id);
     if (!token) {
       res.status(404).json({ error: "Token not found" });
       return;
     }
 
-    await indexTokenTradesIfTradeable(token, res);
-    const candles = listCandles(token.id, interval);
+    await indexTokenTradesIfTradeable(token);
+    const candles = await listCandles(token.id, interval);
 
     logger.info(
       {
@@ -347,15 +348,16 @@ router.get("/tokens/:id/chart", async (req, res): Promise<void> => {
       return;
     }
 
-    const token = getToken(params.data.id);
+    const token = await getToken(params.data.id);
     if (!token) {
       res.status(404).json({ error: "Token not found" });
       return;
     }
 
-    await indexTokenTradesIfTradeable(token, res);
+    await indexTokenTradesIfTradeable(token);
+    const candles = await listCandles(token.id, "5m");
     res.json(
-      listCandles(token.id, "5m").map(({ time, ...candle }) => ({
+      candles.map(({ time, ...candle }) => ({
         timestamp: time * 1000,
         ...candle,
       })),
@@ -374,7 +376,7 @@ router.post("/tokens/import", async (req, res): Promise<void> => {
       return;
     }
 
-    const existing = getTokenByContract(contractAddress);
+    const existing = await getTokenByContract(contractAddress);
     if (existing) {
       res.json(existing);
       return;
@@ -406,7 +408,7 @@ router.post("/tokens/import", async (req, res): Promise<void> => {
     const colors = ["#22c55e", "#ef4444", "#3b82f6", "#eab308", "#a855f7", "#ec4899", "#f97316", "#06b6d4"];
     const logoColor = colors[Math.floor(Math.random() * colors.length)];
 
-    const token = createToken({
+    const token = await createToken({
       name: metadata.name,
       ticker: metadata.symbol,
       price,
@@ -446,13 +448,11 @@ router.get("/portfolio/:address", async (req, res): Promise<void> => {
       return;
     }
 
-    const trades = db.prepare(`
-      SELECT * FROM trades
-      WHERE LOWER(traderAddress) = LOWER(?)
-      ORDER BY datetime(timestamp) ASC
-    `).all(address) as any[];
+    const trades = await db.select().from(tradesTable)
+      .where(sql`LOWER(${tradesTable.traderAddress}) = LOWER(${address})`)
+      .orderBy(asc(tradesTable.timestamp));
 
-    const tokens = getTokens();
+    const tokens = await getTokens();
 
     // Trigger background swap indexing for all active AMM tokens to ensure portfolio data is up-to-date
     for (const token of tokens) {
@@ -549,8 +549,8 @@ router.get("/portfolio/:address", async (req, res): Promise<void> => {
 router.get("/tokens/:id/comments", async (req, res): Promise<void> => {
   try {
     const id = req.params.id;
-    const comments = getCommentsForToken(id);
-    const reactions = getReactionsForToken(id);
+    const comments = await getCommentsForToken(id);
+    const reactions = await getReactionsForToken(id);
     res.json({ comments, reactions });
   } catch (err) {
     logger.error({ err, id: req.params.id }, "GET /api/tokens/:id/comments failed");
@@ -567,7 +567,7 @@ router.post("/tokens/:id/comments", async (req, res): Promise<void> => {
       return;
     }
 
-    const comment = saveComment({
+    const comment = await saveComment({
       tokenId: id,
       authorAddress,
       content,
@@ -590,7 +590,7 @@ router.post("/tokens/:id/reactions", async (req, res): Promise<void> => {
       return;
     }
 
-    const result = toggleEmojiReaction({
+    const result = await toggleEmojiReaction({
       tokenId: id,
       commentId: commentId || null,
       userAddress,
@@ -607,7 +607,7 @@ router.post("/tokens/:id/reactions", async (req, res): Promise<void> => {
 router.get("/community/activity", async (req, res): Promise<void> => {
   try {
     const limit = req.query.limit ? Number(req.query.limit) : 10;
-    const comments = getRecentComments(limit);
+    const comments = await getRecentComments(limit);
     res.json(comments);
   } catch (err) {
     logger.error({ err }, "GET /api/community/activity failed");
@@ -617,7 +617,7 @@ router.get("/community/activity", async (req, res): Promise<void> => {
 
 router.get("/intelligence/signals", async (req, res): Promise<void> => {
   try {
-    const tokens = getTokens();
+    const tokens = await getTokens();
     const signals: any[] = [];
 
     // 1. Check for token risk flags / low trust / high creator holding
@@ -652,12 +652,9 @@ router.get("/intelligence/signals", async (req, res): Promise<void> => {
     for (const tok of tokens) {
       if (!tok.contractAddress || !tok.pairAddress) continue;
       
-      // Simulate price discrepancies across routers
-      // Achswap pricing is slightly shifted
       const achswapSeed = (tok.id.charCodeAt(0) % 7) - 3; // -3% to +3%
       const achswapPrice = tok.price * (1 + 0.018 + achswapSeed * 0.012);
       
-      // Unit Flow pricing is shifted the other way
       const unitFlowSeed = (tok.id.charCodeAt(tok.id.length - 1) % 7) - 3;
       const unitFlowPrice = tok.price * (1 - 0.015 + unitFlowSeed * 0.014);
 
@@ -667,7 +664,6 @@ router.get("/intelligence/signals", async (req, res): Promise<void> => {
         { name: "Unit Flow", price: unitFlowPrice }
       ];
 
-      // Find min and max price exchanges
       let minEx = exchanges[0];
       let maxEx = exchanges[0];
 
@@ -699,13 +695,26 @@ router.get("/intelligence/signals", async (req, res): Promise<void> => {
     }
 
     // 2. Query recent trades for whale trades
-    const trades = db.prepare(`
-      SELECT t.*, tok.ticker, tok.logoColor
-      FROM trades t
-      JOIN tokens tok ON t.tokenId = tok.id
-      ORDER BY datetime(t.timestamp) DESC
-      LIMIT 30
-    `).all() as any[];
+    const trades = await db.select({
+      id: tradesTable.id,
+      tokenId: tradesTable.tokenId,
+      pairAddress: tradesTable.pairAddress,
+      txHash: tradesTable.txHash,
+      logIndex: tradesTable.logIndex,
+      blockNumber: tradesTable.blockNumber,
+      side: tradesTable.side,
+      tokenAmount: tradesTable.tokenAmount,
+      wusdcAmount: tradesTable.wusdcAmount,
+      executionPrice: tradesTable.executionPrice,
+      traderAddress: tradesTable.traderAddress,
+      timestamp: tradesTable.timestamp,
+      ticker: tokensTable.ticker,
+      logoColor: tokensTable.logoColor,
+    })
+    .from(tradesTable)
+    .innerJoin(tokensTable, eq(tradesTable.tokenId, tokensTable.id))
+    .orderBy(desc(tradesTable.timestamp))
+    .limit(30);
 
     for (const t of trades) {
       const amountUsdc = Number(t.wusdcAmount);
@@ -724,7 +733,6 @@ router.get("/intelligence/signals", async (req, res): Promise<void> => {
       }
     }
 
-    // Sort signals by timestamp descending
     signals.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     res.json(signals.slice(0, 40));
@@ -736,7 +744,7 @@ router.get("/intelligence/signals", async (req, res): Promise<void> => {
 
 router.get("/leaderboard", async (req, res): Promise<void> => {
   try {
-    const leaderboard = getLeaderboard();
+    const leaderboard = await getLeaderboard();
     res.json(leaderboard);
   } catch (err) {
     logger.error({ err }, "GET /api/leaderboard failed");
@@ -752,7 +760,7 @@ router.get("/copytrade/wallet/:address", async (req, res): Promise<void> => {
       return;
     }
     
-    let wallet = getSmartWallet(address);
+    let wallet = await getSmartWallet(address);
     if (!wallet) {
       const smartWalletAddress = getDeterministicSmartWalletAddress(address);
       res.json({
@@ -782,7 +790,7 @@ router.post("/copytrade/wallet/:address/deploy", async (req, res): Promise<void>
     }
     
     const smartWalletAddress = getDeterministicSmartWalletAddress(address);
-    const wallet = deploySmartWallet(address, smartWalletAddress);
+    const wallet = await deploySmartWallet(address, smartWalletAddress);
     res.json(wallet);
   } catch (err) {
     logger.error({ err, address: req.params.address }, "POST /api/copytrade/wallet/deploy failed");
@@ -799,7 +807,7 @@ router.post("/copytrade/wallet/:address/fund", async (req, res): Promise<void> =
       return;
     }
     
-    const newBalance = updateSmartWalletBalance(address, amount);
+    const newBalance = await updateSmartWalletBalance(address, amount);
     res.json({ success: true, balance: newBalance });
   } catch (err) {
     logger.error({ err, address: req.params.address }, "POST /api/copytrade/wallet/fund failed");
@@ -816,13 +824,12 @@ router.post("/copytrade/wallet/:address/withdraw", async (req, res): Promise<voi
       return;
     }
     
-    const wallet = getSmartWallet(address);
+    const wallet = await getSmartWallet(address);
     if (!wallet || wallet.balanceUsdc < amount) {
       res.status(400).json({ error: "Insufficient smart wallet balance for withdrawal." });
       return;
     }
 
-    // Try real on-chain withdrawal if possible
     try {
       const crypto = await import("node:crypto");
       const hash = crypto.createHash("sha256").update(`arc.smartwallet.v1.${address.toLowerCase()}`).digest("hex");
@@ -831,7 +838,6 @@ router.post("/copytrade/wallet/:address/withdraw", async (req, res): Promise<voi
       const provider = new JsonRpcProvider(process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
       const signerWallet = new Wallet(privateKey, provider);
       
-      // Get on-chain balance in native token (USDC / ETH on Arc network)
       const onChainBalanceWei = await provider.getBalance(signerWallet.address);
       const withdrawAmountWei = parseUnits(amount.toString(), 18);
       
@@ -845,7 +851,6 @@ router.post("/copytrade/wallet/:address/withdraw", async (req, res): Promise<voi
         
         let txValue = withdrawAmountWei;
         if (withdrawAmountWei + gasCost > onChainBalanceWei) {
-          // If withdrawing maximum, adjust slightly for gas so it doesn't fail
           txValue = onChainBalanceWei - gasCost;
         }
         
@@ -867,7 +872,7 @@ router.post("/copytrade/wallet/:address/withdraw", async (req, res): Promise<voi
       logger.warn({ err: chainErr }, "On-chain withdrawal failed or bypassed. Falling back to simulated database balance update.");
     }
     
-    const newBalance = updateSmartWalletBalance(address, -amount);
+    const newBalance = await updateSmartWalletBalance(address, -amount);
     res.json({ success: true, balance: newBalance });
   } catch (err) {
     logger.error({ err, address: req.params.address }, "POST /api/copytrade/wallet/withdraw failed");
@@ -883,7 +888,7 @@ router.get("/copytrade/targets/:address", async (req, res): Promise<void> => {
       return;
     }
     
-    const targets = listCopytradeTargets(address);
+    const targets = await listCopytradeTargets(address);
     res.json(targets);
   } catch (err) {
     logger.error({ err, address: req.params.address }, "GET /api/copytrade/targets failed");
@@ -901,7 +906,7 @@ router.post("/copytrade/targets/:address", async (req, res): Promise<void> => {
       return;
     }
     
-    const target = setCopytradeTarget(
+    const target = await setCopytradeTarget(
       address,
       targetAddress,
       Number(allocationUsdc ?? 25.0),
@@ -924,7 +929,7 @@ router.delete("/copytrade/targets/:address/:target", async (req, res): Promise<v
       return;
     }
     
-    const success = removeCopytradeTarget(address, target);
+    const success = await removeCopytradeTarget(address, target);
     res.json({ success });
   } catch (err) {
     logger.error({ err, address: req.params.address }, "DELETE /api/copytrade/targets failed");
@@ -940,7 +945,7 @@ router.get("/copytrade/actions/:address", async (req, res): Promise<void> => {
       return;
     }
     
-    const actions = listCopytradeActions(address);
+    const actions = await listCopytradeActions(address);
     res.json(actions);
   } catch (err) {
     logger.error({ err, address: req.params.address }, "GET /api/copytrade/actions failed");
@@ -955,7 +960,7 @@ router.get("/wallet/:address", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Wallet address is required." });
       return;
     }
-    const analytics = getWalletAnalytics(address);
+    const analytics = await getWalletAnalytics(address);
     res.json(analytics);
   } catch (err) {
     logger.error({ err, address: req.params.address }, "GET /api/wallet/:address failed");
@@ -966,7 +971,7 @@ router.get("/wallet/:address", async (req, res): Promise<void> => {
 router.get("/tokens/:id/ai-audit", async (req, res): Promise<void> => {
   try {
     const id = req.params.id;
-    const token = getToken(id);
+    const token = await getToken(id);
     if (!token) {
       res.status(404).json({ error: "Token not found" });
       return;
@@ -978,7 +983,6 @@ router.get("/tokens/:id/ai-audit", async (req, res): Promise<void> => {
     const ticker = token.ticker.toUpperCase();
     const name = token.name.toUpperCase();
 
-    // Try dynamic Gemini API scanning if key exists
     const geminiApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (geminiApiKey) {
       try {
@@ -1051,12 +1055,10 @@ router.get("/tokens/:id/ai-audit", async (req, res): Promise<void> => {
       }
     }
 
-    // Heuristics Fallback rules engine
     let safetyScore = 85;
     let verdict: "danger" | "warning" | "safe" = "safe";
     let satiricalWarning = "✅ LP is locked tighter than a bank vault. Highly based creator. Clean code. Send it.";
 
-    // 1. Creator Concentration Rule
     if (creatorHolding > 45) {
       safetyScore = 15;
       verdict = "danger";
@@ -1067,14 +1069,12 @@ router.get("/tokens/:id/ai-audit", async (req, res): Promise<void> => {
       satiricalWarning = "⚠️ MEDIUM CONCENTRATION: Creator holds a notable chunk. If they decide to cash out, the chart goes straight to zero.";
     }
 
-    // 2. Suspicious ticker / scam name rules
     if (id.includes("rug") || ticker.includes("RUG") || name.includes("RUG") || id.includes("scam") || ticker.includes("SCAM")) {
       safetyScore = Math.min(safetyScore, 10);
       verdict = "danger";
       satiricalWarning = "☠️ HONEYPOT RISK: Literally named after a rug or scam. Code is probably a honeypot. Auditing this is a waste of CPU cycles.";
     }
 
-    // 3. Liquidity rules
     if (isUnlisted) {
       safetyScore = Math.min(safetyScore, 45);
       if (verdict !== "danger") verdict = "warning";
@@ -1120,17 +1120,16 @@ router.get("/tokens/:id/ai-audit", async (req, res): Promise<void> => {
 router.get("/tokens/:id/sentiment", async (req, res): Promise<void> => {
   try {
     const id = req.params.id;
-    const token = getToken(id);
+    const token = await getToken(id);
     if (!token) {
       res.status(404).json({ error: "Token not found" });
       return;
     }
 
-    const comments = getCommentsForToken(id);
+    const comments = await getCommentsForToken(id);
     const totalComments = comments.length;
     const hypeScore = token.hypeScore ?? 0;
 
-    // Try dynamic Gemini API sentiment summary if key exists
     const geminiApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (geminiApiKey) {
       try {
@@ -1195,7 +1194,6 @@ router.get("/tokens/:id/sentiment", async (req, res): Promise<void> => {
       }
     }
 
-    // Local heuristics calculation
     let buzzScore = Math.round(Math.min(100, Math.max(10, (totalComments * 8) + (hypeScore * 3))));
     if (buzzScore === 10) {
       buzzScore = Math.round(15 + (id.charCodeAt(0) % 15));
@@ -1232,7 +1230,7 @@ router.post("/tokens/:id/hype", async (req, res): Promise<void> => {
   try {
     const id = req.params.id;
     const points = typeof req.body.points === "number" ? req.body.points : 1;
-    const newHype = incrementHype(id, points);
+    const newHype = await incrementHype(id, points);
     res.json({ success: true, hypeScore: newHype });
   } catch (err) {
     logger.error({ err, id: req.params.id }, "POST /api/tokens/:id/hype failed");
@@ -1257,4 +1255,3 @@ router.post("/tokens/:id/ai-chat", async (req, res): Promise<void> => {
 });
 
 export default router;
-

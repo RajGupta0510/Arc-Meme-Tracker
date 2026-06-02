@@ -1,7 +1,20 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import crypto from "node:crypto";
+import { Wallet } from "ethers";
+import { eq, and, desc, asc, sql, isNotNull, ne } from "drizzle-orm";
+import { db } from "@workspace/db";
+export { db };
+import {
+  tokensTable,
+  tradesTable,
+  commentsTable,
+  reactionsTable,
+  copytradeWalletsTable,
+  copytradeTargetsTable,
+  copytradeActionsTable,
+} from "@workspace/db";
 import { logger } from "./logger";
 
 export type Token = {
@@ -303,7 +316,7 @@ const seedTokens: Token[] = [
     marketType: "unlisted",
     pairAddress: null,
     routerAddress: null,
-    totalSupply: 10000000000,
+    totalSupply: 100000000,
     holders: 1102,
     txCount: 5621,
     website: "https://arcfloki.io",
@@ -312,229 +325,27 @@ const seedTokens: Token[] = [
   },
 ];
 
-const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const defaultDbPath = path.resolve(moduleDir, "..", "data", "arcmeme.sqlite");
-const dbPath = process.env.TOKEN_DB_PATH ?? defaultDbPath;
+const launchedTokenWhere = and(
+  isNotNull(tokensTable.contractAddress),
+  ne(tokensTable.contractAddress, ""),
+  isNotNull(tokensTable.pairAddress),
+  ne(tokensTable.pairAddress, "")
+);
 
-mkdirSync(path.dirname(dbPath), { recursive: true });
+function rowToToken(row: any): Token {
+  const id = row.id;
+  const change24h = row.change24h;
+  const volume24h = row.volume24h;
+  const marketCap = row.marketCap;
 
-export const db = new DatabaseSync(dbPath);
-
-const createTokensTableSql = `
-  CREATE TABLE IF NOT EXISTS tokens (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    ticker TEXT NOT NULL,
-    price REAL NOT NULL,
-    marketCap REAL NOT NULL,
-    volume24h REAL NOT NULL,
-    change24h REAL NOT NULL,
-    description TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    creatorAddress TEXT NOT NULL,
-    logoColor TEXT NOT NULL,
-    logoUrl TEXT,
-    contractAddress TEXT,
-    marketType TEXT NOT NULL DEFAULT 'unlisted',
-    pairAddress TEXT,
-    routerAddress TEXT,
-    totalSupply REAL NOT NULL,
-    holders INTEGER NOT NULL,
-    txCount INTEGER NOT NULL,
-    website TEXT,
-    twitter TEXT,
-    telegram TEXT
-  );
-`;
-
-db.exec(createTokensTableSql);
-
-const requiredColumns = [
-  ["id", "TEXT PRIMARY KEY"],
-  ["name", "TEXT NOT NULL DEFAULT ''"],
-  ["ticker", "TEXT NOT NULL DEFAULT ''"],
-  ["price", "REAL NOT NULL DEFAULT 0"],
-  ["marketCap", "REAL NOT NULL DEFAULT 0"],
-  ["volume24h", "REAL NOT NULL DEFAULT 0"],
-  ["change24h", "REAL NOT NULL DEFAULT 0"],
-  ["description", "TEXT NOT NULL DEFAULT ''"],
-  ["createdAt", "TEXT NOT NULL DEFAULT ''"],
-  ["creatorAddress", "TEXT NOT NULL DEFAULT ''"],
-  ["logoColor", "TEXT NOT NULL DEFAULT '#8b5cf6'"],
-  ["logoUrl", "TEXT"],
-  ["contractAddress", "TEXT"],
-  ["marketType", "TEXT NOT NULL DEFAULT 'unlisted'"],
-  ["pairAddress", "TEXT"],
-  ["routerAddress", "TEXT"],
-  ["totalSupply", "REAL NOT NULL DEFAULT 0"],
-  ["holders", "INTEGER NOT NULL DEFAULT 0"],
-  ["txCount", "INTEGER NOT NULL DEFAULT 0"],
-  ["website", "TEXT"],
-  ["twitter", "TEXT"],
-  ["telegram", "TEXT"],
-  ["momentumScore", "REAL NOT NULL DEFAULT 50"],
-  ["trustScore", "REAL NOT NULL DEFAULT 80"],
-  ["creatorHoldingPercent", "REAL NOT NULL DEFAULT 0"],
-  ["riskFlags", "TEXT NOT NULL DEFAULT ''"],
-  ["signals", "TEXT NOT NULL DEFAULT ''"],
-  ["hypeScore", "INTEGER NOT NULL DEFAULT 0"],
-] as const;
-
-function ensureTokenSchema() {
-  const tableInfo = db.prepare("PRAGMA table_info(tokens)").all() as Array<{
-    name: string;
-  }>;
-  const existingColumns = new Set(tableInfo.map((column) => column.name));
-
-  if (!existingColumns.has("id")) {
-    db.exec(`ALTER TABLE tokens RENAME TO tokens_legacy_${Date.now()}`);
-    db.exec(createTokensTableSql);
-    return;
-  }
-
-  for (const [name, definition] of requiredColumns) {
-    if (existingColumns.has(name)) continue;
-    db.exec(`ALTER TABLE tokens ADD COLUMN ${name} ${definition}`);
-  }
-}
-
-ensureTokenSchema();
-
-db.exec(`
-  CREATE INDEX IF NOT EXISTS tokens_createdAt_idx ON tokens(createdAt);
-  CREATE INDEX IF NOT EXISTS tokens_change24h_idx ON tokens(change24h);
-  CREATE INDEX IF NOT EXISTS tokens_marketCap_idx ON tokens(marketCap);
-  CREATE INDEX IF NOT EXISTS tokens_volume24h_idx ON tokens(volume24h);
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS trades (
-    id TEXT PRIMARY KEY,
-    tokenId TEXT NOT NULL,
-    pairAddress TEXT NOT NULL,
-    txHash TEXT NOT NULL,
-    logIndex INTEGER NOT NULL,
-    blockNumber INTEGER NOT NULL,
-    side TEXT NOT NULL,
-    tokenAmount REAL NOT NULL,
-    wusdcAmount REAL NOT NULL,
-    executionPrice REAL NOT NULL,
-    traderAddress TEXT NOT NULL,
-    timestamp TEXT NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS trades_tokenId_blockNumber_idx ON trades(tokenId, blockNumber DESC);
-  CREATE INDEX IF NOT EXISTS trades_pairAddress_idx ON trades(pairAddress);
-
-  CREATE TABLE IF NOT EXISTS comments (
-    id TEXT PRIMARY KEY,
-    tokenId TEXT NOT NULL,
-    authorAddress TEXT NOT NULL,
-    content TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    parentId TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS reactions (
-    id TEXT PRIMARY KEY,
-    tokenId TEXT NOT NULL,
-    commentId TEXT,
-    userAddress TEXT NOT NULL,
-    emoji TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    UNIQUE(tokenId, commentId, userAddress, emoji)
-  );
-
-  CREATE TABLE IF NOT EXISTS copytrade_wallets (
-    address TEXT PRIMARY KEY,
-    smartWalletAddress TEXT NOT NULL,
-    balanceUsdc REAL NOT NULL DEFAULT 0,
-    isDeployed INTEGER NOT NULL DEFAULT 0,
-    isActive INTEGER NOT NULL DEFAULT 1,
-    createdAt TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS copytrade_targets (
-    ownerAddress TEXT NOT NULL,
-    targetAddress TEXT NOT NULL,
-    allocationUsdc REAL NOT NULL DEFAULT 25.0,
-    maxSlippage REAL NOT NULL DEFAULT 1.0,
-    isActive INTEGER NOT NULL DEFAULT 1,
-    createdAt TEXT NOT NULL,
-    PRIMARY KEY (ownerAddress, targetAddress)
-  );
-
-  CREATE TABLE IF NOT EXISTS copytrade_actions (
-    id TEXT PRIMARY KEY,
-    ownerAddress TEXT NOT NULL,
-    targetAddress TEXT NOT NULL,
-    targetTxHash TEXT NOT NULL,
-    tokenId TEXT NOT NULL,
-    side TEXT NOT NULL,
-    targetAmount REAL NOT NULL,
-    mirrorAmount REAL NOT NULL,
-    mirrorPrice REAL NOT NULL,
-    mirrorTxHash TEXT NOT NULL,
-    status TEXT NOT NULL,
-    error TEXT,
-    timestamp TEXT NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS comments_tokenId_idx ON comments(tokenId);
-  CREATE INDEX IF NOT EXISTS reactions_tokenId_commentId_idx ON reactions(tokenId, commentId);
-  CREATE INDEX IF NOT EXISTS copytrade_targets_owner_idx ON copytrade_targets(ownerAddress);
-  CREATE INDEX IF NOT EXISTS copytrade_actions_owner_idx ON copytrade_actions(ownerAddress);
-`);
-
-const tokenColumns = `
-  id, name, ticker, price, marketCap, volume24h, change24h, description,
-  createdAt, creatorAddress, logoColor, logoUrl, contractAddress, marketType,
-  pairAddress, routerAddress, totalSupply, holders, txCount, website, twitter, telegram,
-  momentumScore, trustScore, creatorHoldingPercent, riskFlags, signals, hypeScore
-`;
-const launchedTokenWhere = "contractAddress IS NOT NULL AND contractAddress != '' AND pairAddress IS NOT NULL AND pairAddress != ''";
-
-const countStatement = db.prepare("SELECT COUNT(*) AS count FROM tokens");
-const insertStatement = db.prepare(`
-  INSERT INTO tokens (${tokenColumns})
-  VALUES (
-    $id, $name, $ticker, $price, $marketCap, $volume24h, $change24h,
-    $description, $createdAt, $creatorAddress, $logoColor, $logoUrl,
-    $contractAddress, $marketType, $pairAddress, $routerAddress, $totalSupply,
-    $holders, $txCount, $website, $twitter, $telegram,
-    $momentumScore, $trustScore, $creatorHoldingPercent, $riskFlags, $signals, $hypeScore
-  )
-`);
-
-const insertTradeStatement = db.prepare(`
-  INSERT OR IGNORE INTO trades (
-    id, tokenId, pairAddress, txHash, logIndex, blockNumber, side,
-    tokenAmount, wusdcAmount, executionPrice, traderAddress, timestamp
-  )
-  VALUES (
-    $id, $tokenId, $pairAddress, $txHash, $logIndex, $blockNumber, $side,
-    $tokenAmount, $wusdcAmount, $executionPrice, $traderAddress, $timestamp
-  )
-`);
-
-function rowToToken(row: Record<string, unknown>): Token {
-  const id = String(row.id);
-  const change24h = Number(row.change24h);
-  const volume24h = Number(row.volume24h);
-  const marketCap = Number(row.marketCap);
-  
-  // Calculate dynamic momentum score (0-99)
   let momentum = Math.round(50 + change24h * 0.15 + Math.log1p(volume24h) * 2);
   momentum = Math.min(99, Math.max(10, momentum));
-  
-  // Calculate dynamic trust score (0-99)
+
   let trust = id === "rugpull" ? 12 : Math.round(85 - (id.length % 5) + Math.min(10, Math.log1p(marketCap) * 0.5));
   trust = Math.min(99, Math.max(5, trust));
-  
-  // Calculate dynamic creator concentration
+
   const creatorHolding = id === "rugpull" ? 82.5 : Number((2.5 + (id.charCodeAt(0) % 8)).toFixed(1));
-  
-  // Generate dynamic risk flags
+
   const flagsList = [];
   if (id === "rugpull") {
     flagsList.push("creator_concentration", "unlocked_liquidity", "honeypot_risk");
@@ -543,8 +354,7 @@ function rowToToken(row: Record<string, unknown>): Token {
     if (creatorHolding > 8) flagsList.push("medium_concentration");
   }
   const riskFlags = flagsList.join(",");
-  
-  // Generate dynamic active signals
+
   const signalsList = [];
   if (momentum > 75) signalsList.push("fresh_momentum");
   if (volume24h > 15000) signalsList.push("volume_spike");
@@ -554,173 +364,76 @@ function rowToToken(row: Record<string, unknown>): Token {
   const signals = signalsList.join(",");
 
   return {
-    id,
-    name: String(row.name).trim(),
-    ticker: String(row.ticker).trim(),
-    price: Number(row.price),
-    marketCap,
-    volume24h,
-    change24h,
-    description: String(row.description),
-    createdAt: String(row.createdAt),
-    creatorAddress: String(row.creatorAddress),
-    logoColor: String(row.logoColor),
-    logoUrl: row.logoUrl === null ? null : String(row.logoUrl),
-    contractAddress: row.contractAddress === null ? null : String(row.contractAddress),
+    ...row,
     marketType: row.marketType === "amm_pool" ? "amm_pool" : "unlisted",
-    pairAddress: row.pairAddress === null ? null : String(row.pairAddress),
-    routerAddress: row.routerAddress === null ? null : String(row.routerAddress),
-    totalSupply: Number(row.totalSupply),
-    holders: Number(row.holders),
-    txCount: Number(row.txCount),
-    website: row.website === null ? null : String(row.website),
-    twitter: row.twitter === null ? null : String(row.twitter),
-    telegram: row.telegram === null ? null : String(row.telegram),
-    momentumScore: Number(row.momentumScore ?? momentum),
-    trustScore: Number(row.trustScore ?? trust),
-    creatorHoldingPercent: Number(row.creatorHoldingPercent ?? creatorHolding),
-    riskFlags: String(row.riskFlags || riskFlags),
-    signals: String(row.signals || signals),
-    hypeScore: Number(row.hypeScore ?? (id.charCodeAt(0) % 25)),
+    momentumScore: row.momentumScore ?? momentum,
+    trustScore: row.trustScore ?? trust,
+    creatorHoldingPercent: row.creatorHoldingPercent ?? creatorHolding,
+    riskFlags: row.riskFlags || riskFlags,
+    signals: row.signals || signals,
+    hypeScore: row.hypeScore ?? (id.charCodeAt(0) % 25),
   };
 }
 
-function saveToken(token: Token) {
-  insertStatement.run({
-    $id: token.id,
-    $name: token.name,
-    $ticker: token.ticker,
-    $price: token.price,
-    $marketCap: token.marketCap,
-    $volume24h: token.volume24h,
-    $change24h: token.change24h,
-    $description: token.description,
-    $createdAt: token.createdAt,
-    $creatorAddress: token.creatorAddress,
-    $logoColor: token.logoColor,
-    $logoUrl: token.logoUrl,
-    $contractAddress: token.contractAddress,
-    $marketType: token.marketType,
-    $pairAddress: token.pairAddress,
-    $routerAddress: token.routerAddress,
-    $totalSupply: token.totalSupply,
-    $holders: token.holders,
-    $txCount: token.txCount,
-    $website: token.website,
-    $twitter: token.twitter,
-    $telegram: token.telegram,
-    $momentumScore: token.momentumScore ?? 50,
-    $trustScore: token.trustScore ?? 80,
-    $creatorHoldingPercent: token.creatorHoldingPercent ?? 0,
-    $riskFlags: token.riskFlags ?? "",
-    $signals: token.signals ?? "",
-    $hypeScore: token.hypeScore ?? 0,
-  });
-}
-
-function rowToTrade(row: Record<string, unknown>): Trade {
+function rowToTrade(row: any): Trade {
   return {
-    id: String(row.id),
-    tokenId: String(row.tokenId),
-    pairAddress: String(row.pairAddress),
-    txHash: String(row.txHash),
-    logIndex: Number(row.logIndex),
-    blockNumber: Number(row.blockNumber),
+    ...row,
     side: row.side === "sell" ? "sell" : "buy",
-    tokenAmount: Number(row.tokenAmount),
-    wusdcAmount: Number(row.wusdcAmount),
-    executionPrice: Number(row.executionPrice),
-    traderAddress: String(row.traderAddress),
-    timestamp: String(row.timestamp),
   };
 }
 
-export function saveTrades(trades: Trade[]) {
+export async function saveToken(token: Token) {
+  await db.insert(tokensTable)
+    .values(token)
+    .onConflictDoUpdate({
+      target: tokensTable.id,
+      set: token,
+    });
+}
+
+export async function saveTrades(trades: Trade[]): Promise<number> {
   if (trades.length === 0) return 0;
-
-  db.exec("BEGIN");
   let inserted = 0;
-  try {
-    for (const trade of trades) {
-      const result = insertTradeStatement.run({
-        $id: trade.id,
-        $tokenId: trade.tokenId,
-        $pairAddress: trade.pairAddress,
-        $txHash: trade.txHash,
-        $logIndex: trade.logIndex,
-        $blockNumber: trade.blockNumber,
-        $side: trade.side,
-        $tokenAmount: trade.tokenAmount,
-        $wusdcAmount: trade.wusdcAmount,
-        $executionPrice: trade.executionPrice,
-        $traderAddress: trade.traderAddress,
-        $timestamp: trade.timestamp,
-      });
-      inserted += Number(result.changes);
+  for (const trade of trades) {
+    try {
+      const res = await db.insert(tradesTable)
+        .values(trade)
+        .onConflictDoNothing();
+      // On Pg pool inserts, check if execution succeeded
+      inserted++;
+    } catch (e) {
+      // Ignore conflict
     }
-    db.exec("COMMIT");
-
-    // Recalculate stats for each unique token in the saved trades
-    const tokenIds = [...new Set(trades.map((t) => t.tokenId))];
-    for (const tokenId of tokenIds) {
-      updateTokenMarketStats(tokenId);
-    }
-
-    return inserted;
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
   }
-}
 
-function seedInitialTokens() {
-  const row = countStatement.get() as { count: number };
-  if (row.count > 0) return;
-
-  db.exec("BEGIN");
-  try {
-    for (const token of seedTokens) {
-      saveToken(token);
-    }
-    db.exec("COMMIT");
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
+  // Recalculate stats for each unique token in the saved trades
+  const tokenIds = [...new Set(trades.map((t) => t.tokenId))];
+  for (const tokenId of tokenIds) {
+    await updateTokenMarketStats(tokenId);
   }
+  return inserted;
 }
-
-seedInitialTokens();
-
-type TradeStats = {
-  tokenId: string;
-  txs1h: number;
-  vol1h: number;
-  buys1h: number;
-  sells1h: number;
-};
 
 const cachedRankings: Record<string, { timestamp: number; data: Token[] }> = {};
 
-function getRecentTradeStats(hours = 24): Record<string, TradeStats> {
+export async function getRecentTradeStats(hours = 24): Promise<Record<string, any>> {
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
   try {
-    const rows = db.prepare(`
-      SELECT
-        tokenId,
-        COUNT(*) as txs1h,
-        SUM(wusdcAmount) as vol1h,
-        SUM(CASE WHEN side = 'buy' THEN 1 ELSE 0 END) as buys1h,
-        SUM(CASE WHEN side = 'sell' THEN 1 ELSE 0 END) as sells1h
-      FROM trades
-      WHERE timestamp >= ?
-      GROUP BY tokenId
-    `).all(cutoff) as Record<string, unknown>[];
+    const rows = await db.select({
+      tokenId: tradesTable.tokenId,
+      txs1h: sql<number>`COUNT(*)`,
+      vol1h: sql<number>`SUM(${tradesTable.wusdcAmount})`,
+      buys1h: sql<number>`SUM(CASE WHEN ${tradesTable.side} = 'buy' THEN 1 ELSE 0 END)`,
+      sells1h: sql<number>`SUM(CASE WHEN ${tradesTable.side} = 'sell' THEN 1 ELSE 0 END)`,
+    })
+    .from(tradesTable)
+    .where(sql`${tradesTable.timestamp} >= ${cutoff}`)
+    .groupBy(tradesTable.tokenId);
 
-    const stats: Record<string, TradeStats> = {};
+    const stats: Record<string, any> = {};
     for (const row of rows) {
-      const tId = String(row.tokenId);
-      stats[tId] = {
-        tokenId: tId,
+      stats[row.tokenId] = {
+        tokenId: row.tokenId,
         txs1h: Number(row.txs1h),
         vol1h: Number(row.vol1h || 0),
         buys1h: Number(row.buys1h),
@@ -733,17 +446,15 @@ function getRecentTradeStats(hours = 24): Record<string, TradeStats> {
   }
 }
 
-export function listTokens(sort = "trending", limit = 50): Token[] {
+export async function listTokens(sort = "trending", limit = 50): Promise<Token[]> {
   const now = Date.now();
   const cacheKey = `${sort}_${limit}`;
   if (cachedRankings[cacheKey] && now - cachedRankings[cacheKey].timestamp < 5000) {
     return cachedRankings[cacheKey].data;
   }
 
-  const rows = db
-    .prepare(`SELECT ${tokenColumns} FROM tokens WHERE ${launchedTokenWhere}`)
-    .all() as Record<string, unknown>[];
-  const allTokens = rows.map(rowToToken);
+  const rows = await db.select().from(tokensTable).where(launchedTokenWhere);
+  const allTokens: Token[] = rows.map(rowToToken);
 
   let sorted: Token[] = [];
 
@@ -756,7 +467,7 @@ export function listTokens(sort = "trending", limit = 50): Token[] {
   } else if (sort === "topGainers") {
     sorted = allTokens.sort((a, b) => b.change24h - a.change24h);
   } else if (sort === "mostActive") {
-    const recentStats = getRecentTradeStats(24);
+    const recentStats = await getRecentTradeStats(24);
     sorted = allTokens.sort((a, b) => {
       const aRecent = recentStats[a.id]?.txs1h ?? 0;
       const bRecent = recentStats[b.id]?.txs1h ?? 0;
@@ -765,12 +476,12 @@ export function listTokens(sort = "trending", limit = 50): Token[] {
       return bScore - aScore;
     });
   } else {
-    const recentStats = getRecentTradeStats(6);
+    const recentStats = await getRecentTradeStats(6);
     sorted = allTokens.sort((a, b) => {
       const aStats = recentStats[a.id];
       const bStats = recentStats[b.id];
 
-      const calculateScore = (token: Token, stats?: TradeStats) => {
+      const calculateScore = (token: Token, stats?: any) => {
         let score = 0;
         score += Math.log1p(token.volume24h) * 15;
 
@@ -806,38 +517,31 @@ export function listTokens(sort = "trending", limit = 50): Token[] {
   return result;
 }
 
-export function getTokenByContract(contractAddress: string): Token | null {
+export async function getTokenByContract(contractAddress: string): Promise<Token | null> {
   try {
-    const row = db
-      .prepare(`SELECT ${tokenColumns} FROM tokens WHERE LOWER(contractAddress) = LOWER(?)`)
-      .get(contractAddress) as Record<string, unknown> | undefined;
-    return row ? rowToToken(row) : null;
+    const rows = await db.select().from(tokensTable)
+      .where(sql`LOWER(${tokensTable.contractAddress}) = LOWER(${contractAddress})`);
+    return rows[0] ? rowToToken(rows[0]) : null;
   } catch {
     return null;
   }
 }
 
-export function getTokens(): Token[] {
-  const rows = db
-    .prepare(`SELECT ${tokenColumns} FROM tokens WHERE ${launchedTokenWhere}`)
-    .all() as Record<string, unknown>[];
-
+export async function getTokens(): Promise<Token[]> {
+  const rows = await db.select().from(tokensTable).where(launchedTokenWhere);
   return rows.map(rowToToken);
 }
 
-export function getAllTokens(): Token[] {
-  const rows = db
-    .prepare(`SELECT ${tokenColumns} FROM tokens`)
-    .all() as Record<string, unknown>[];
-
+export async function getAllTokens(): Promise<Token[]> {
+  const rows = await db.select().from(tokensTable);
   return rows.map(rowToToken);
 }
 
-export function listTrades(tokenId: string, limit = 50): Trade[] {
-  const rows = db
-    .prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber DESC, logIndex DESC LIMIT ?")
-    .all(tokenId, limit) as Record<string, unknown>[];
-
+export async function listTrades(tokenId: string, limit = 50): Promise<Trade[]> {
+  const rows = await db.select().from(tradesTable)
+    .where(eq(tradesTable.tokenId, tokenId))
+    .orderBy(desc(tradesTable.blockNumber), desc(tradesTable.logIndex))
+    .limit(limit);
   return rows.map(rowToTrade);
 }
 
@@ -854,10 +558,10 @@ export function isCandleInterval(value: unknown): value is CandleInterval {
   return typeof value === "string" && value in candleIntervalSeconds;
 }
 
-export function listCandles(tokenId: string, interval: CandleInterval): Candle[] {
-  const trades = db
-    .prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber ASC, logIndex ASC")
-    .all(tokenId) as Record<string, unknown>[];
+export async function listCandles(tokenId: string, interval: CandleInterval): Promise<Candle[]> {
+  const trades = await db.select().from(tradesTable)
+    .where(eq(tradesTable.tokenId, tokenId))
+    .orderBy(asc(tradesTable.blockNumber), asc(tradesTable.logIndex));
 
   const bucketSeconds = candleIntervalSeconds[interval];
   const buckets = new Map<number, Candle>();
@@ -899,23 +603,21 @@ export function listCandles(tokenId: string, interval: CandleInterval): Candle[]
   }));
 }
 
-export function getLatestTradeBlock(tokenId: string): number | null {
-  const row = db
-    .prepare("SELECT MAX(blockNumber) AS blockNumber FROM trades WHERE tokenId = ?")
-    .get(tokenId) as { blockNumber: number | null } | undefined;
-
-  return row?.blockNumber ?? null;
+export async function getLatestTradeBlock(tokenId: string): Promise<number | null> {
+  const rows = await db.select({
+    maxBlock: sql<number>`MAX(${tradesTable.blockNumber})`
+  })
+  .from(tradesTable)
+  .where(eq(tradesTable.tokenId, tokenId));
+  return rows[0]?.maxBlock ?? null;
 }
 
-export function getToken(id: string): Token | null {
-  const row = db
-    .prepare(`SELECT ${tokenColumns} FROM tokens WHERE id = ?`)
-    .get(id) as Record<string, unknown> | undefined;
-
-  return row ? rowToToken(row) : null;
+export async function getToken(id: string): Promise<Token | null> {
+  const rows = await db.select().from(tokensTable).where(eq(tokensTable.id, id));
+  return rows[0] ? rowToToken(rows[0]) : null;
 }
 
-export function createToken(input: TokenInput): Token {
+export async function createToken(input: TokenInput): Promise<Token> {
   const ticker = input.ticker.trim().toUpperCase();
   const token: Token = {
     ...input,
@@ -926,59 +628,57 @@ export function createToken(input: TokenInput): Token {
     marketType: input.marketType ?? "unlisted",
     pairAddress: input.pairAddress ?? null,
     routerAddress: input.routerAddress ?? null,
+    momentumScore: input.momentumScore ?? 50,
+    trustScore: input.trustScore ?? 80,
+    creatorHoldingPercent: input.creatorHoldingPercent ?? 0,
+    riskFlags: input.riskFlags ?? "",
+    signals: input.signals ?? "",
+    hypeScore: input.hypeScore ?? 0,
   };
 
-  saveToken(token);
+  await saveToken(token);
   return token;
 }
 
-const updateMarketStatement = db.prepare(`
-  UPDATE tokens
-  SET marketType = $marketType,
-      pairAddress = $pairAddress,
-      routerAddress = $routerAddress
-  WHERE id = $id
-`);
-
-export function updateTokenMarket(
+export async function updateTokenMarket(
   id: string,
   market: Pick<Token, "marketType" | "pairAddress" | "routerAddress">,
-): Token | null {
-  const result = updateMarketStatement.run({
-    $id: id,
-    $marketType: market.marketType,
-    $pairAddress: market.pairAddress,
-    $routerAddress: market.routerAddress,
-  });
+): Promise<Token | null> {
+  await db.update(tokensTable)
+    .set({
+      marketType: market.marketType,
+      pairAddress: market.pairAddress,
+      routerAddress: market.routerAddress,
+    })
+    .where(eq(tokensTable.id, id));
 
-  if (result.changes === 0) return null;
-  return getToken(id);
+  return await getToken(id);
 }
 
-export function updateTokenMarketStats(tokenId: string) {
+export async function updateTokenMarketStats(tokenId: string) {
   try {
-    const token = getToken(tokenId);
+    const token = await getToken(tokenId);
     if (!token) return;
 
-    const trades = db.prepare("SELECT * FROM trades WHERE tokenId = ? ORDER BY blockNumber ASC, logIndex ASC").all(tokenId) as any[];
+    const trades = await db.select().from(tradesTable)
+      .where(eq(tradesTable.tokenId, tokenId))
+      .orderBy(asc(tradesTable.blockNumber), asc(tradesTable.logIndex));
+      
     if (trades.length === 0) return;
 
-    // Price is based on the latest execution price
     const latestTrade = trades[trades.length - 1];
     const price = Number(latestTrade.executionPrice);
     const marketCap = price * token.totalSupply;
     const txCount = trades.length;
 
-    // 24h volume
     const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const trades24h = trades.filter(t => t.timestamp >= cutoff24h);
-    const volume24h = trades24h.reduce((sum, t) => sum + Number(t.wusdcAmount), 0);
+    const trades24h: any[] = trades.filter((t: any) => t.timestamp >= cutoff24h);
+    const volume24h = trades24h.reduce((sum: number, t: any) => sum + Number(t.wusdcAmount), 0);
 
-    // 24h change
     let change24h = 0;
     if (trades24h.length > 0) {
-      const tradesBefore24h = trades.filter(t => t.timestamp < cutoff24h);
-      let initialPrice = token.price; // fallback
+      const tradesBefore24h: any[] = trades.filter((t: any) => t.timestamp < cutoff24h);
+      let initialPrice = token.price;
       if (tradesBefore24h.length > 0) {
         initialPrice = Number(tradesBefore24h[tradesBefore24h.length - 1].executionPrice);
       } else {
@@ -989,7 +689,6 @@ export function updateTokenMarketStats(tokenId: string) {
       }
     }
 
-    // Holders: unique traderAddress with positive remaining balance
     const balances: Record<string, number> = {};
     for (const t of trades) {
       const addr = t.traderAddress.toLowerCase();
@@ -999,26 +698,24 @@ export function updateTokenMarketStats(tokenId: string) {
     const uniqueHolders = Object.keys(balances).filter(addr => balances[addr] > 0.0001);
     let holdersCount = uniqueHolders.length;
 
-    // Add pair address if launched and not in list
     if (token.pairAddress && !uniqueHolders.includes(token.pairAddress.toLowerCase())) {
       holdersCount += 1;
     }
 
-    // Add creator if not in list
     if (token.creatorAddress && !uniqueHolders.includes(token.creatorAddress.toLowerCase())) {
       holdersCount += 1;
     }
 
-    db.prepare(`
-      UPDATE tokens
-      SET price = ?,
-          marketCap = ?,
-          volume24h = ?,
-          change24h = ?,
-          holders = ?,
-          txCount = ?
-      WHERE id = ?
-    `).run(price, marketCap, volume24h, change24h, holdersCount, txCount, tokenId);
+    await db.update(tokensTable)
+      .set({
+        price,
+        marketCap,
+        volume24h,
+        change24h,
+        holders: holdersCount,
+        txCount,
+      })
+      .where(eq(tokensTable.id, tokenId));
 
     logger.info({ tokenId, price, marketCap, volume24h, change24h, holdersCount, txCount }, "Updated token market stats in DB successfully");
   } catch (err) {
@@ -1027,7 +724,7 @@ export function updateTokenMarketStats(tokenId: string) {
 }
 
 export function getTokenDbPath() {
-  return dbPath;
+  return "";
 }
 
 export type Comment = {
@@ -1048,132 +745,103 @@ export type Reaction = {
   timestamp: string;
 };
 
-// Statements for Comments and Reactions
-const insertCommentStatement = db.prepare(`
-  INSERT INTO comments (id, tokenId, authorAddress, content, timestamp, parentId)
-  VALUES ($id, $tokenId, $authorAddress, $content, $timestamp, $parentId)
-`);
-
-const selectCommentsStatement = db.prepare(`
-  SELECT * FROM comments WHERE tokenId = ? ORDER BY datetime(timestamp) ASC
-`);
-
-const toggleReactionStatement = db.prepare(`
-  INSERT INTO reactions (id, tokenId, commentId, userAddress, emoji, timestamp)
-  VALUES ($id, $tokenId, $commentId, $userAddress, $emoji, $timestamp)
-`);
-
-const deleteReactionStatement = db.prepare(`
-  DELETE FROM reactions 
-  WHERE tokenId = $tokenId 
-    AND (commentId = $commentId OR (commentId IS NULL AND $commentId IS NULL))
-    AND userAddress = $userAddress 
-    AND emoji = $emoji
-`);
-
-const selectReactionsStatement = db.prepare(`
-  SELECT * FROM reactions WHERE tokenId = ?
-`);
-
-const selectRecentCommentsStatement = db.prepare(`
-  SELECT c.*, t.ticker as tokenTicker 
-  FROM comments c
-  JOIN tokens t ON c.tokenId = t.id
-  ORDER BY datetime(c.timestamp) DESC
-  LIMIT ?
-`);
-
-export function getCommentsForToken(tokenId: string): Comment[] {
-  const rows = selectCommentsStatement.all(tokenId) as Record<string, unknown>[];
-  return rows.map((row) => ({
-    id: String(row.id),
-    tokenId: String(row.tokenId),
-    authorAddress: String(row.authorAddress),
-    content: String(row.content),
-    timestamp: String(row.timestamp),
-    parentId: row.parentId ? String(row.parentId) : null,
+export async function getCommentsForToken(tokenId: string): Promise<Comment[]> {
+  const rows = await db.select().from(commentsTable)
+    .where(eq(commentsTable.tokenId, tokenId))
+    .orderBy(asc(commentsTable.timestamp));
+  return rows.map((row: any) => ({
+    ...row,
+    parentId: row.parentId || null,
   }));
 }
 
-export function saveComment(comment: Omit<Comment, "id" | "timestamp">): Comment {
+export async function saveComment(comment: Omit<Comment, "id" | "timestamp">): Promise<Comment> {
   const newComment: Comment = {
     ...comment,
     id: "c-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now(),
     timestamp: new Date().toISOString(),
   };
 
-  insertCommentStatement.run({
-    $id: newComment.id,
-    $tokenId: newComment.tokenId,
-    $authorAddress: newComment.authorAddress,
-    $content: newComment.content,
-    $timestamp: newComment.timestamp,
-    $parentId: newComment.parentId,
+  await db.insert(commentsTable).values({
+    id: newComment.id,
+    tokenId: newComment.tokenId,
+    authorAddress: newComment.authorAddress,
+    content: newComment.content,
+    timestamp: newComment.timestamp,
+    parentId: newComment.parentId,
   });
 
   return newComment;
 }
 
-export function toggleEmojiReaction(
+export async function toggleEmojiReaction(
   reaction: Omit<Reaction, "id" | "timestamp">
-): { added: boolean } {
-  // Try deleting first (to toggle off)
-  const deleteResult = deleteReactionStatement.run({
-    $tokenId: reaction.tokenId,
-    $commentId: reaction.commentId,
-    $userAddress: reaction.userAddress,
-    $emoji: reaction.emoji,
-  });
+): Promise<{ added: boolean }> {
+  const deleted = await db.delete(reactionsTable)
+    .where(
+      and(
+        eq(reactionsTable.tokenId, reaction.tokenId),
+        reaction.commentId === null 
+          ? sql`${reactionsTable.commentId} IS NULL`
+          : eq(reactionsTable.commentId, reaction.commentId),
+        eq(reactionsTable.userAddress, reaction.userAddress),
+        eq(reactionsTable.emoji, reaction.emoji)
+      )
+    )
+    .returning();
 
-  if (deleteResult.changes > 0) {
+  if (deleted.length > 0) {
     return { added: false };
   }
 
-  // Otherwise, add it
   const newId = "r-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now();
-  toggleReactionStatement.run({
-    $id: newId,
-    $tokenId: reaction.tokenId,
-    $commentId: reaction.commentId,
-    $userAddress: reaction.userAddress,
-    $emoji: reaction.emoji,
-    $timestamp: new Date().toISOString(),
+  await db.insert(reactionsTable).values({
+    id: newId,
+    tokenId: reaction.tokenId,
+    commentId: reaction.commentId,
+    userAddress: reaction.userAddress,
+    emoji: reaction.emoji,
+    timestamp: new Date().toISOString(),
   });
 
   return { added: true };
 }
 
-export function getReactionsForToken(tokenId: string): Reaction[] {
-  const rows = selectReactionsStatement.all(tokenId) as Record<string, unknown>[];
-  return rows.map((row) => ({
-    id: String(row.id),
-    tokenId: String(row.tokenId),
-    commentId: row.commentId ? String(row.commentId) : null,
-    userAddress: String(row.userAddress),
-    emoji: String(row.emoji),
-    timestamp: String(row.timestamp),
+export async function getReactionsForToken(tokenId: string): Promise<Reaction[]> {
+  const rows = await db.select().from(reactionsTable).where(eq(reactionsTable.tokenId, tokenId));
+  return rows.map((row: any) => ({
+    ...row,
+    commentId: row.commentId || null,
   }));
 }
 
-export function getRecentComments(limit = 10): (Comment & { tokenTicker: string })[] {
-  const rows = selectRecentCommentsStatement.all(limit) as Record<string, unknown>[];
-  return rows.map((row) => ({
-    id: String(row.id),
-    tokenId: String(row.tokenId),
-    authorAddress: String(row.authorAddress),
-    content: String(row.content),
-    timestamp: String(row.timestamp),
-    parentId: row.parentId ? String(row.parentId) : null,
-    tokenTicker: String(row.tokenTicker),
+export async function getRecentComments(limit = 10): Promise<(Comment & { tokenTicker: string })[]> {
+  const rows = await db.select({
+    id: commentsTable.id,
+    tokenId: commentsTable.tokenId,
+    authorAddress: commentsTable.authorAddress,
+    content: commentsTable.content,
+    timestamp: commentsTable.timestamp,
+    parentId: commentsTable.parentId,
+    tokenTicker: tokensTable.ticker,
+  })
+  .from(commentsTable)
+  .innerJoin(tokensTable, eq(commentsTable.tokenId, tokensTable.id))
+  .orderBy(desc(commentsTable.timestamp))
+  .limit(limit);
+
+  return rows.map((row: any) => ({
+    ...row,
+    parentId: row.parentId || null,
   }));
 }
 
-export function incrementHype(tokenId: string, points: number): number {
+export async function incrementHype(tokenId: string, points: number): Promise<number> {
   try {
-    const token = getToken(tokenId);
+    const token = await getToken(tokenId);
     if (!token) return 0;
     const newHype = (token.hypeScore ?? 0) + points;
-    db.prepare("UPDATE tokens SET hypeScore = ? WHERE id = ?").run(newHype, tokenId);
+    await db.update(tokensTable).set({ hypeScore: newHype }).where(eq(tokensTable.id, tokenId));
     return newHype;
   } catch (err) {
     return 0;
@@ -1190,11 +858,11 @@ export type LeaderboardEntry = {
   type: "whale" | "degen" | "lp_giant";
 };
 
-export function getLeaderboard(metric = "pnl"): LeaderboardEntry[] {
+export async function getLeaderboard(metric = "pnl"): Promise<LeaderboardEntry[]> {
   const mockTraders: LeaderboardEntry[] = [];
 
   try {
-    const allTrades = db.prepare("SELECT * FROM trades").all() as Record<string, unknown>[];
+    const allTrades = await db.select().from(tradesTable);
     const grouped = new Map<string, { tradesCount: number; volume: number; buys: number; sells: number; trades: any[] }>();
 
     for (const row of allTrades) {
@@ -1211,7 +879,7 @@ export function getLeaderboard(metric = "pnl"): LeaderboardEntry[] {
       data.trades.push(row);
     }
 
-    const tokens = getTokens();
+    const tokens = await getTokens();
     for (const [addr, data] of grouped.entries()) {
       if (mockTraders.some(t => t.address.toLowerCase() === addr)) continue;
 
@@ -1291,22 +959,15 @@ export function getLeaderboard(metric = "pnl"): LeaderboardEntry[] {
   return mockTraders;
 }
 
-export function getWalletAnalytics(address: string) {
+export async function getWalletAnalytics(address: string) {
   const addrLower = address.toLowerCase();
 
-  const mockHoldings: Record<string, any> = {};
-
-  const isMock = addrLower in mockHoldings;
-  const mockData = isMock ? mockHoldings[addrLower] : null;
-
   try {
-    const trades = db.prepare(`
-      SELECT * FROM trades
-      WHERE LOWER(traderAddress) = LOWER(?)
-      ORDER BY datetime(timestamp) ASC
-    `).all(address) as any[];
+    const trades = await db.select().from(tradesTable)
+      .where(sql`LOWER(${tradesTable.traderAddress}) = LOWER(${address})`)
+      .orderBy(asc(tradesTable.timestamp));
 
-    const tokens = getTokens();
+    const tokens = await getTokens();
     const tokenStats: Record<string, any> = {};
 
     let totalVolume = 0;
@@ -1380,35 +1041,27 @@ export function getWalletAnalytics(address: string) {
         realizedPnl: Number(s.realizedPnl.toFixed(2)),
       }));
 
-    const finalRealizedPnl = isMock ? mockData.realizedPnl : realizedPnl;
-    const finalWinRate = isMock ? mockData.winRate : (totalSells > 0 ? Math.round((profitableSells / totalSells) * 100) : 50);
-    const finalVolume = isMock ? mockData.volume : totalVolume;
-    const finalTradesCount = isMock ? mockData.tradesCount : trades.length;
-    const finalHoldings = isMock ? [...mockData.holdings, ...holdings] : holdings;
-
     return {
       address,
-      realizedPnl: Number(finalRealizedPnl.toFixed(2)),
-      winRate: finalWinRate,
-      volume: Number(finalVolume.toFixed(2)),
-      tradesCount: finalTradesCount,
-      holdings: finalHoldings,
+      realizedPnl: Number(realizedPnl.toFixed(2)),
+      winRate: totalSells > 0 ? Math.round((profitableSells / totalSells) * 100) : 50,
+      volume: Number(totalVolume.toFixed(2)),
+      tradesCount: trades.length,
+      holdings,
       trades: trades.reverse().slice(0, 50),
     };
   } catch (err) {
     return {
       address,
-      realizedPnl: isMock ? mockData.realizedPnl : 0,
-      winRate: isMock ? mockData.winRate : 50,
-      volume: isMock ? mockData.volume : 0,
-      tradesCount: isMock ? mockData.tradesCount : 0,
-      holdings: isMock ? mockData.holdings : [],
+      realizedPnl: 0,
+      winRate: 50,
+      volume: 0,
+      tradesCount: 0,
+      holdings: [],
       trades: [],
     };
   }
 }
-
-// --- Smart Copytrading Wallets, Targets, and Actions Interfaces & Helpers ---
 
 export type CopytradeWallet = {
   address: string;
@@ -1444,9 +1097,6 @@ export type CopytradeAction = {
   timestamp: string;
 };
 
-import crypto from "node:crypto";
-import { Wallet } from "ethers";
-
 export function getDeterministicSmartWalletAddress(ownerAddress: string): string {
   const hash = crypto.createHash("sha256").update(`arc.smartwallet.v1.${ownerAddress.toLowerCase()}`).digest("hex");
   const privateKey = "0x" + hash;
@@ -1454,20 +1104,19 @@ export function getDeterministicSmartWalletAddress(ownerAddress: string): string
   return wallet.address.toLowerCase();
 }
 
-export function getSmartWallet(address: string): CopytradeWallet | null {
+export async function getSmartWallet(address: string): Promise<CopytradeWallet | null> {
   const addrLower = address.toLowerCase();
   try {
-    const row = db.prepare("SELECT * FROM copytrade_wallets WHERE LOWER(address) = ?").get(addrLower) as any;
-    if (!row) return null;
+    const rows = await db.select().from(copytradeWalletsTable)
+      .where(sql`LOWER(${copytradeWalletsTable.address}) = ${addrLower}`);
+    if (rows.length === 0) return null;
+    const row = rows[0];
 
-    // Self-heal stale database records from previous sessions
     const correctAddress = getDeterministicSmartWalletAddress(addrLower);
     if (row.smartWalletAddress.toLowerCase() !== correctAddress.toLowerCase()) {
-      db.prepare(`
-        UPDATE copytrade_wallets
-        SET smartWalletAddress = ?
-        WHERE LOWER(address) = ?
-      `).run(correctAddress, addrLower);
+      await db.update(copytradeWalletsTable)
+        .set({ smartWalletAddress: correctAddress })
+        .where(sql`LOWER(${copytradeWalletsTable.address}) = ${addrLower}`);
       row.smartWalletAddress = correctAddress;
     }
 
@@ -1485,25 +1134,27 @@ export function getSmartWallet(address: string): CopytradeWallet | null {
   }
 }
 
-export function deploySmartWallet(address: string, smartWalletAddress: string): CopytradeWallet {
+export async function deploySmartWallet(address: string, smartWalletAddress: string): Promise<CopytradeWallet> {
   const addrLower = address.toLowerCase();
   const smartLower = smartWalletAddress.toLowerCase();
   const now = new Date().toISOString();
   
-  const existing = getSmartWallet(addrLower);
+  const existing = await getSmartWallet(addrLower);
   if (existing) {
-    db.prepare(`
-      UPDATE copytrade_wallets
-      SET isDeployed = 1, isActive = 1, smartWalletAddress = ?
-      WHERE LOWER(address) = ?
-    `).run(smartLower, addrLower);
+    await db.update(copytradeWalletsTable)
+      .set({ isDeployed: 1, isActive: 1, smartWalletAddress: smartLower })
+      .where(sql`LOWER(${copytradeWalletsTable.address}) = ${addrLower}`);
     return { ...existing, isDeployed: 1, isActive: 1, smartWalletAddress: smartLower };
   }
 
-  db.prepare(`
-    INSERT INTO copytrade_wallets (address, smartWalletAddress, balanceUsdc, isDeployed, isActive, createdAt)
-    VALUES (?, ?, 100.0, 1, 1, ?)
-  `).run(addrLower, smartLower, now);
+  await db.insert(copytradeWalletsTable).values({
+    address: addrLower,
+    smartWalletAddress: smartLower,
+    balanceUsdc: 100.0,
+    isDeployed: 1,
+    isActive: 1,
+    createdAt: now,
+  });
 
   return {
     address: addrLower,
@@ -1515,26 +1166,24 @@ export function deploySmartWallet(address: string, smartWalletAddress: string): 
   };
 }
 
-export function updateSmartWalletBalance(address: string, amount: number): number {
+export async function updateSmartWalletBalance(address: string, amount: number): Promise<number> {
   const addrLower = address.toLowerCase();
-  const wallet = getSmartWallet(addrLower);
+  const wallet = await getSmartWallet(addrLower);
   if (!wallet) return 0;
 
   const newBalance = Math.max(0, wallet.balanceUsdc + amount);
-  db.prepare(`
-    UPDATE copytrade_wallets
-    SET balanceUsdc = ?
-    WHERE LOWER(address) = ?
-  `).run(newBalance, addrLower);
+  await db.update(copytradeWalletsTable)
+    .set({ balanceUsdc: newBalance })
+    .where(sql`LOWER(${copytradeWalletsTable.address}) = ${addrLower}`);
 
   return newBalance;
 }
 
-export function listCopytradeTargets(ownerAddress: string): CopytradeTarget[] {
+export async function listCopytradeTargets(ownerAddress: string): Promise<CopytradeTarget[]> {
   const ownerLower = ownerAddress.toLowerCase();
   try {
-    const rows = db.prepare("SELECT * FROM copytrade_targets WHERE LOWER(ownerAddress) = ?").all(ownerLower) as any[];
-    return rows.map(r => ({
+    const rows = await db.select().from(copytradeTargetsTable).where(sql`LOWER(${copytradeTargetsTable.ownerAddress}) = ${ownerLower}`);
+    return rows.map((r: any) => ({
       ownerAddress: r.ownerAddress,
       targetAddress: r.targetAddress,
       allocationUsdc: Number(r.allocationUsdc),
@@ -1548,12 +1197,18 @@ export function listCopytradeTargets(ownerAddress: string): CopytradeTarget[] {
   }
 }
 
-export function getCopytradeTarget(ownerAddress: string, targetAddress: string): CopytradeTarget | null {
+export async function getCopytradeTarget(ownerAddress: string, targetAddress: string): Promise<CopytradeTarget | null> {
   const ownerLower = ownerAddress.toLowerCase();
   const targetLower = targetAddress.toLowerCase();
   try {
-    const row = db.prepare("SELECT * FROM copytrade_targets WHERE LOWER(ownerAddress) = ? AND LOWER(targetAddress) = ?").get(ownerLower, targetLower) as any;
-    if (!row) return null;
+    const rows = await db.select().from(copytradeTargetsTable).where(
+      and(
+        sql`LOWER(${copytradeTargetsTable.ownerAddress}) = ${ownerLower}`,
+        sql`LOWER(${copytradeTargetsTable.targetAddress}) = ${targetLower}`
+      )
+    );
+    if (rows.length === 0) return null;
+    const row = rows[0];
     return {
       ownerAddress: row.ownerAddress,
       targetAddress: row.targetAddress,
@@ -1567,24 +1222,27 @@ export function getCopytradeTarget(ownerAddress: string, targetAddress: string):
   }
 }
 
-export function setCopytradeTarget(
+export async function setCopytradeTarget(
   ownerAddress: string,
   targetAddress: string,
   allocationUsdc: number,
   maxSlippage: number,
   isActive: number
-): CopytradeTarget {
+): Promise<CopytradeTarget> {
   const ownerLower = ownerAddress.toLowerCase();
   const targetLower = targetAddress.toLowerCase();
   const now = new Date().toISOString();
 
-  const existing = getCopytradeTarget(ownerLower, targetLower);
+  const existing = await getCopytradeTarget(ownerLower, targetLower);
   if (existing) {
-    db.prepare(`
-      UPDATE copytrade_targets
-      SET allocationUsdc = ?, maxSlippage = ?, isActive = ?
-      WHERE LOWER(ownerAddress) = ? AND LOWER(targetAddress) = ?
-    `).run(allocationUsdc, maxSlippage, isActive, ownerLower, targetLower);
+    await db.update(copytradeTargetsTable)
+      .set({ allocationUsdc, maxSlippage, isActive })
+      .where(
+        and(
+          sql`LOWER(${copytradeTargetsTable.ownerAddress}) = ${ownerLower}`,
+          sql`LOWER(${copytradeTargetsTable.targetAddress}) = ${targetLower}`
+        )
+      );
     return {
       ownerAddress: ownerLower,
       targetAddress: targetLower,
@@ -1595,10 +1253,14 @@ export function setCopytradeTarget(
     };
   }
 
-  db.prepare(`
-    INSERT INTO copytrade_targets (ownerAddress, targetAddress, allocationUsdc, maxSlippage, isActive, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(ownerLower, targetLower, allocationUsdc, maxSlippage, isActive, now);
+  await db.insert(copytradeTargetsTable).values({
+    ownerAddress: ownerLower,
+    targetAddress: targetLower,
+    allocationUsdc,
+    maxSlippage,
+    isActive,
+    createdAt: now,
+  });
 
   return {
     ownerAddress: ownerLower,
@@ -1610,23 +1272,34 @@ export function setCopytradeTarget(
   };
 }
 
-export function removeCopytradeTarget(ownerAddress: string, targetAddress: string): boolean {
+export async function removeCopytradeTarget(ownerAddress: string, targetAddress: string): Promise<boolean> {
   const ownerLower = ownerAddress.toLowerCase();
   const targetLower = targetAddress.toLowerCase();
   try {
-    const result = db.prepare("DELETE FROM copytrade_targets WHERE LOWER(ownerAddress) = ? AND LOWER(targetAddress) = ?").run(ownerLower, targetLower);
-    return Number(result.changes) > 0;
+    const deleted = await db.delete(copytradeTargetsTable)
+      .where(
+        and(
+          sql`LOWER(${copytradeTargetsTable.ownerAddress}) = ${ownerLower}`,
+          sql`LOWER(${copytradeTargetsTable.targetAddress}) = ${targetLower}`
+        )
+      )
+      .returning();
+    return deleted.length > 0;
   } catch (err) {
     logger.error({ err, ownerAddress, targetAddress }, "Failed to removeCopytradeTarget");
     return false;
   }
 }
 
-export function listCopytradeActions(ownerAddress: string): CopytradeAction[] {
+export async function listCopytradeActions(ownerAddress: string): Promise<CopytradeAction[]> {
   const ownerLower = ownerAddress.toLowerCase();
   try {
-    const rows = db.prepare("SELECT * FROM copytrade_actions WHERE LOWER(ownerAddress) = ? ORDER BY datetime(timestamp) DESC LIMIT 100").all(ownerLower) as any[];
-    return rows.map(r => ({
+    const rows = await db.select().from(copytradeActionsTable)
+      .where(sql`LOWER(${copytradeActionsTable.ownerAddress}) = ${ownerLower}`)
+      .orderBy(desc(copytradeActionsTable.timestamp))
+      .limit(100);
+      
+    return rows.map((r: any) => ({
       id: r.id,
       ownerAddress: r.ownerAddress,
       targetAddress: r.targetAddress,
@@ -1647,34 +1320,47 @@ export function listCopytradeActions(ownerAddress: string): CopytradeAction[] {
   }
 }
 
-export function saveCopytradeAction(action: CopytradeAction): boolean {
+export async function saveCopytradeAction(action: CopytradeAction): Promise<boolean> {
   try {
-    db.prepare(`
-      INSERT OR REPLACE INTO copytrade_actions (
-        id, ownerAddress, targetAddress, targetTxHash, tokenId, side,
-        targetAmount, mirrorAmount, mirrorPrice, mirrorTxHash, status, error, timestamp
-      ) VALUES (
-        $id, $ownerAddress, $targetAddress, $targetTxHash, $tokenId, $side,
-        $targetAmount, $mirrorAmount, $mirrorPrice, $mirrorTxHash, $status, $error, $timestamp
-      )
-    `).run({
-      $id: action.id,
-      $ownerAddress: action.ownerAddress.toLowerCase(),
-      $targetAddress: action.targetAddress.toLowerCase(),
-      $targetTxHash: action.targetTxHash,
-      $tokenId: action.tokenId,
-      $side: action.side,
-      $targetAmount: action.targetAmount,
-      $mirrorAmount: action.mirrorAmount,
-      $mirrorPrice: action.mirrorPrice,
-      $mirrorTxHash: action.mirrorTxHash,
-      $status: action.status,
-      $error: action.error,
-      $timestamp: action.timestamp,
-    });
+    const row = {
+      ...action,
+      ownerAddress: action.ownerAddress.toLowerCase(),
+      targetAddress: action.targetAddress.toLowerCase(),
+    };
+
+    await db.insert(copytradeActionsTable)
+      .values(row)
+      .onConflictDoUpdate({
+        target: copytradeActionsTable.id,
+        set: row,
+      });
     return true;
   } catch (err) {
     logger.error({ err, action }, "Failed to saveCopytradeAction");
     return false;
+  }
+}
+
+export async function seedInitialTokens() {
+  try {
+    const countRes = await db.select({ count: sql<number>`count(*)` }).from(tokensTable);
+    const count = Number(countRes[0]?.count || 0);
+    if (count > 0) return;
+
+    logger.info("Database is empty, seeding initial tokens...");
+    for (const token of seedTokens) {
+      await db.insert(tokensTable).values({
+        ...token,
+        momentumScore: token.momentumScore ?? 50,
+        trustScore: token.trustScore ?? 80,
+        creatorHoldingPercent: token.creatorHoldingPercent ?? 0,
+        riskFlags: token.riskFlags ?? "",
+        signals: token.signals ?? "",
+        hypeScore: token.hypeScore ?? 0,
+      });
+    }
+    logger.info("Successfully seeded initial tokens in PostgreSQL.");
+  } catch (err) {
+    logger.error({ err }, "Failed to seed initial tokens in PostgreSQL");
   }
 }

@@ -1,5 +1,13 @@
 import { getLatestTradeBlock, saveTrades, updateTokenMarketStats, type Token, type Trade } from "./token-store";
 import { logger } from "./logger";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
+import {
+  db,
+  tradesTable,
+  copytradeTargetsTable,
+  copytradeWalletsTable,
+  copytradeActionsTable,
+} from "@workspace/db";
 
 const activeIndexings = new Set<string>();
 const lastScannedBlockMap = new Map<string, number>();
@@ -296,11 +304,10 @@ export async function indexTokenSwapEvents(token: Token) {
   activeIndexings.add(token.id);
   try {
     const latestBlock = await getLatestBlockNumber();
-    const latestStoredBlock = getLatestTradeBlock(token.id);
+    const latestStoredBlock = await getLatestTradeBlock(token.id);
     const lastScannedBlock = lastScannedBlockMap.get(token.id) ?? null;
     const maxLookback = Number(process.env.TRADE_INDEX_MAX_LOOKBACK ?? 1_500_000);
     const lookbackStart = Math.max(0, latestBlock - maxLookback);
-    const recentWindowStart = Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS);
 
     let fromBlock = lookbackStart;
     if (latestStoredBlock !== null) {
@@ -355,7 +362,7 @@ export async function indexTokenSwapEvents(token: Token) {
       }
     }
 
-    const insertedCount = saveTrades(trades);
+    const insertedCount = await saveTrades(trades);
 
     if (insertedCount > 0) {
       for (const t of trades) {
@@ -363,8 +370,7 @@ export async function indexTokenSwapEvents(token: Token) {
       }
     }
 
-    // Force recalculation of token price, volume, change, holders, and txCount in database
-    updateTokenMarketStats(token.id);
+    await updateTokenMarketStats(token.id);
 
     lastScannedBlockMap.set(token.id, toBlock);
 
@@ -379,10 +385,8 @@ export async function indexTokenSwapEvents(token: Token) {
 
 import crypto from "node:crypto";
 import {
-  db,
   getSmartWallet,
   updateSmartWalletBalance,
-  listCopytradeTargets,
   saveCopytradeAction,
   getWalletAnalytics,
   type CopytradeAction
@@ -392,10 +396,13 @@ export async function dispatchCopytrades(trade: Trade) {
   const targetLower = trade.traderAddress.toLowerCase();
   
   try {
-    const targets = db.prepare(`
-      SELECT * FROM copytrade_targets 
-      WHERE LOWER(targetAddress) = ? AND isActive = 1
-    `).all(targetLower) as any[];
+    const targets = await db.select().from(copytradeTargetsTable)
+      .where(
+        and(
+          sql`LOWER(${copytradeTargetsTable.targetAddress}) = ${targetLower}`,
+          eq(copytradeTargetsTable.isActive, 1)
+        )
+      );
 
     if (targets.length === 0) return;
 
@@ -406,7 +413,7 @@ export async function dispatchCopytrades(trade: Trade) {
 
     for (const targetConfig of targets) {
       const ownerAddress = targetConfig.ownerAddress.toLowerCase();
-      const smartWallet = getSmartWallet(ownerAddress);
+      const smartWallet = await getSmartWallet(ownerAddress);
 
       if (!smartWallet || smartWallet.isActive === 0 || smartWallet.isDeployed === 0) {
         logger.warn({ ownerAddress }, "Smart wallet not active or not deployed; skipped copytrade");
@@ -434,39 +441,32 @@ export async function dispatchCopytrades(trade: Trade) {
             error: `Insufficient smart wallet balance ($${smartWallet.balanceUsdc.toFixed(2)} USDC). Required: $${allocation.toFixed(2)} USDC.`,
             timestamp,
           };
-          saveCopytradeAction(failedAction);
+          await saveCopytradeAction(failedAction);
           logger.warn({ ownerAddress, balance: smartWallet.balanceUsdc }, "Copytrade failed: insufficient funds");
           continue;
         }
 
-        updateSmartWalletBalance(ownerAddress, -allocation);
+        await updateSmartWalletBalance(ownerAddress, -allocation);
 
         const slippagePercent = 0.001 + Math.random() * 0.004;
         const slippageFactor = 1 + slippagePercent;
         const executionPrice = trade.executionPrice * slippageFactor;
         const mirrorAmount = allocation / executionPrice;
 
-        db.prepare(`
-          INSERT INTO trades (
-            id, tokenId, pairAddress, txHash, logIndex, blockNumber, side,
-            tokenAmount, wusdcAmount, executionPrice, traderAddress, timestamp
-          ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-          )
-        `).run(
-          `${trade.txHash}-${trade.logIndex}-trade-${ownerAddress}`,
-          trade.tokenId,
-          trade.pairAddress,
-          mirrorTxHash,
-          trade.logIndex + 1000,
-          trade.blockNumber,
-          "buy",
-          mirrorAmount,
-          allocation,
+        await db.insert(tradesTable).values({
+          id: `${trade.txHash}-${trade.logIndex}-trade-${ownerAddress}`,
+          tokenId: trade.tokenId,
+          pairAddress: trade.pairAddress,
+          txHash: mirrorTxHash,
+          logIndex: trade.logIndex + 1000,
+          blockNumber: trade.blockNumber,
+          side: "buy",
+          tokenAmount: mirrorAmount,
+          wusdcAmount: allocation,
           executionPrice,
-          smartWallet.smartWalletAddress.toLowerCase(),
-          timestamp
-        );
+          traderAddress: smartWallet.smartWalletAddress.toLowerCase(),
+          timestamp,
+        });
 
         const successAction: CopytradeAction = {
           id: `${trade.txHash}-${trade.logIndex}-mirror-${ownerAddress}`,
@@ -483,11 +483,11 @@ export async function dispatchCopytrades(trade: Trade) {
           error: null,
           timestamp,
         };
-        saveCopytradeAction(successAction);
+        await saveCopytradeAction(successAction);
 
         logger.info({ ownerAddress, mirrorAmount, executionPrice }, "Successfully mirrored buy swap");
       } else if (trade.side === "sell") {
-        const analytics = getWalletAnalytics(smartWallet.smartWalletAddress);
+        const analytics = await getWalletAnalytics(smartWallet.smartWalletAddress);
         const holding = analytics.holdings.find((h: any) => h.tokenId === trade.tokenId);
         const userBalance = holding ? Number(holding.balance) : 0;
 
@@ -500,29 +500,22 @@ export async function dispatchCopytrades(trade: Trade) {
         const executionPrice = trade.executionPrice * slippageFactor;
         const usdcReceived = userBalance * executionPrice;
 
-        updateSmartWalletBalance(ownerAddress, usdcReceived);
+        await updateSmartWalletBalance(ownerAddress, usdcReceived);
 
-        db.prepare(`
-          INSERT INTO trades (
-            id, tokenId, pairAddress, txHash, logIndex, blockNumber, side,
-            tokenAmount, wusdcAmount, executionPrice, traderAddress, timestamp
-          ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-          )
-        `).run(
-          `${trade.txHash}-${trade.logIndex}-trade-${ownerAddress}`,
-          trade.tokenId,
-          trade.pairAddress,
-          mirrorTxHash,
-          trade.logIndex + 1000,
-          trade.blockNumber,
-          "sell",
-          userBalance,
-          usdcReceived,
+        await db.insert(tradesTable).values({
+          id: `${trade.txHash}-${trade.logIndex}-trade-${ownerAddress}`,
+          tokenId: trade.tokenId,
+          pairAddress: trade.pairAddress,
+          txHash: mirrorTxHash,
+          logIndex: trade.logIndex + 1000,
+          blockNumber: trade.blockNumber,
+          side: "sell",
+          tokenAmount: userBalance,
+          wusdcAmount: usdcReceived,
           executionPrice,
-          smartWallet.smartWalletAddress.toLowerCase(),
-          timestamp
-        );
+          traderAddress: smartWallet.smartWalletAddress.toLowerCase(),
+          timestamp,
+        });
 
         const successAction: CopytradeAction = {
           id: `${trade.txHash}-${trade.logIndex}-mirror-${ownerAddress}`,
@@ -539,7 +532,7 @@ export async function dispatchCopytrades(trade: Trade) {
           error: null,
           timestamp,
         };
-        saveCopytradeAction(successAction);
+        await saveCopytradeAction(successAction);
 
         logger.info({ ownerAddress, userBalance, executionPrice }, "Successfully mirrored sell swap");
       }

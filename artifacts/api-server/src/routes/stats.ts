@@ -6,7 +6,7 @@ const router: IRouter = Router();
 
 router.get("/stats", async (_req, res): Promise<void> => {
   try {
-    const tokens = getTokens();
+    const tokens = await getTokens();
     const now = Date.now();
     const oneDayMs = 24 * 60 * 60 * 1000;
 
