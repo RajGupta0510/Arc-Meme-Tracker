@@ -109,28 +109,20 @@ function TerminalActivityFeed() {
     refetchInterval: 5000,
   });
 
-  const [activeTab, setActiveTab] = useState<"intel" | "arbitrage">("intel");
-  const { playHypeSound, playTickerClick } = useAudioTelemetry();
+  const { playTickerClick } = useAudioTelemetry();
   const prevLengthRef = useRef(signals.length);
 
   useEffect(() => {
     if (signals.length > prevLengthRef.current) {
       const newest = signals[0];
-      if (newest) {
-        if (newest.type === "arbitrage_opportunity") {
-          playHypeSound();
-        } else {
-          playTickerClick();
-        }
+      if (newest && newest.type !== "arbitrage_opportunity") {
+        playTickerClick();
       }
     }
     prevLengthRef.current = signals.length;
-  }, [signals, playHypeSound, playTickerClick]);
+  }, [signals, playTickerClick]);
 
   const intelSignals = signals.filter((s) => s.type !== "arbitrage_opportunity");
-  const arbitrageSignals = signals.filter((s) => s.type === "arbitrage_opportunity");
-
-  const displaySignals = activeTab === "intel" ? intelSignals : arbitrageSignals;
 
   return (
     <div className="glass-panel p-4 flex flex-col gap-3 font-mono h-full border border-border/80 bg-card/45 backdrop-blur-md">
@@ -142,30 +134,12 @@ function TerminalActivityFeed() {
         <span className="text-[9px] text-muted-foreground uppercase tracking-widest animate-pulse">Telemetry Live</span>
       </div>
 
-      {/* Tabs navigation */}
-      <div className="flex border-b border-border/20 text-[10px]">
-        <button
-          onClick={() => setActiveTab("intel")}
-          className={`flex-1 py-2 font-bold uppercase tracking-wider text-center transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === "intel"
-              ? "border-b-2 border-primary text-primary"
-              : "text-muted-foreground hover:text-foreground hover:bg-secondary/10"
-          }`}
-        >
+      {/* Title Header */}
+      <div className="flex border-b border-border/20 text-[10px] pb-2">
+        <div className="flex-1 py-1 font-bold uppercase tracking-wider text-left flex items-center gap-1.5 text-primary">
           <ShieldAlert className="h-3.5 w-3.5 text-primary shrink-0" />
           AI Intel ({intelSignals.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("arbitrage")}
-          className={`flex-1 py-2 font-bold uppercase tracking-wider text-center transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === "arbitrage"
-              ? "border-b-2 border-primary text-primary"
-              : "text-muted-foreground hover:text-foreground hover:bg-secondary/10"
-          }`}
-        >
-          <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
-          Arb Radar ({arbitrageSignals.length})
-        </button>
+        </div>
       </div>
 
       <div className="space-y-3 overflow-y-auto max-h-[500px] pr-1 text-xs select-none">
@@ -174,14 +148,12 @@ function TerminalActivityFeed() {
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Syncing Feed...</span>
           </div>
-        ) : displaySignals.length === 0 ? (
+        ) : intelSignals.length === 0 ? (
           <div className="text-[10px] text-muted-foreground text-center py-12 italic border border-dashed border-border/40 rounded p-4 bg-black/20">
-            {activeTab === "intel"
-              ? "[SYS] No security signals reported. Awaiting active contract syncs..."
-              : "[SYS] Scanners quiet. No cross-DEX arbitrage discrepancies >= 1.5% detected."}
+            [SYS] No security signals reported. Awaiting active contract syncs...
           </div>
         ) : (
-          displaySignals.map((sig) => {
+          intelSignals.map((sig) => {
             const isCritical = sig.severity === "critical";
             const isWarning = sig.severity === "warning";
             const typeColor = isCritical
@@ -196,49 +168,11 @@ function TerminalActivityFeed() {
               ? "border-l-yellow-500 shadow-[inset_4px_0_12px_rgba(234,179,8,0.06)]"
               : "border-l-primary shadow-[inset_4px_0_12px_rgba(34,197,94,0.06)]";
 
-            if (sig.type === "arbitrage_opportunity" && sig.arbitrage) {
-              const arb = sig.arbitrage;
-              return (
-                <div
-                  key={sig.id}
-                  className={`block border-l-2 pl-3 py-2.5 pr-2 rounded bg-card/25 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 ${sideGlow}`}
-                >
-                  <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
-                    <span className="px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border border-primary/40 bg-primary/10 text-primary uppercase flex items-center gap-1">
-                      <Zap className="h-2.5 w-2.5 text-primary shrink-0 animate-pulse" /> Arb Triggered
-                    </span>
-                    <span className="text-primary font-bold">{arb.profitPercent.toFixed(2)}% net gap</span>
-                  </div>
-                  
-                  <div className="text-foreground/95 font-mono text-[10px] leading-relaxed">
-                    Arb discrepancy detected for <span className="text-primary font-bold">${sig.ticker}</span>:
-                    <div className="grid grid-cols-2 gap-2 mt-2 p-1.5 rounded bg-black/60 border border-border/20 text-[9px]">
-                      <div>
-                        <span className="text-muted-foreground">BUY:</span> <span className="text-primary font-extrabold">{arb.buyDex}</span>
-                        <div className="text-foreground/80 font-mono">${formatPrice(arb.buyPrice)}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">SELL:</span> <span className="text-destructive font-extrabold">{arb.sellDex}</span>
-                        <div className="text-foreground/80 font-mono">${formatPrice(arb.sellPrice)}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-[8px] text-muted-foreground">Ready to route</span>
-                    <Button asChild size="sm" className="h-6 px-3 text-[9px] text-black font-extrabold uppercase bg-primary hover:bg-primary/80">
-                      <Link href={`/token/${sig.tokenId}`}>Execute Arb</Link>
-                    </Button>
-                  </div>
-                </div>
-              );
-            }
-
             return (
               <Link
                 href={`/token/${sig.tokenId}`}
                 key={sig.id}
-                className={`block border-l-2 pl-3 py-2 pr-2 rounded-r bg-card/10 hover:bg-card/45 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 cursor-pointer group ${sideGlow}`}
+                className={`block border-l-2 pl-3 py-2 pr-2 rounded bg-card/10 hover:bg-card/45 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 cursor-pointer group ${sideGlow}`}
               >
                 <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
                   <span className={`px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border ${typeColor} flex items-center gap-1`}>
