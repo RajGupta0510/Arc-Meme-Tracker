@@ -1,14 +1,8 @@
 {
-  "cleanUrls": true,
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "https://arc-meme-tracker.onrender.com/api/$1"
-    },
-    { "handle": "filesystem" },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/api/:path*",
+      "destination": "https://arc-meme-tracker.onrender.com/api/:path*"
     }
   ]
 }
