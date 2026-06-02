@@ -5,10 +5,7 @@
       "src": "/api/(.*)",
       "dest": "https://arc-meme-tracker.onrender.com/api/$1"
     },
-    {
-      "src": "/(assets/.*|.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|json|webmanifest|woff2?))",
-      "dest": "/$1"
-    },
+    { "handle": "filesystem" },
     {
       "src": "/(.*)",
       "dest": "/index.html"
