@@ -1,6 +1,6 @@
 import { useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useGetToken, getGetTokenQueryKey, useGetTokenTrades, getGetTokenTradesQueryKey, useGetTokenCandles, getGetTokenCandlesQueryKey, type Trade } from "@workspace/api-client-react";
+import { useGetToken, getGetTokenQueryKey, useGetTokenTrades, getGetTokenTradesQueryKey, useGetTokenCandles, getGetTokenCandlesQueryKey, type Trade, type Token } from "@workspace/api-client-react";
 import { TokenLogo } from "@/components/token-card";
 import { formatCompactNumber, formatAddress, formatBalance, formatPrice } from "@/lib/utils";
 import { MarketCandlestickChart, type MarketCandle } from "@/components/market-candlestick-chart";
@@ -186,7 +186,21 @@ export function TokenDetailPage() {
   };
 
   const { data: token, isLoading: tokenLoading, isError: tokenError, refetch: refetchToken } = useGetToken(id!, {
-    query: { enabled: !!id, queryKey: getGetTokenQueryKey(id!) },
+    query: {
+      enabled: !!id,
+      queryKey: getGetTokenQueryKey(id!),
+      placeholderData: () => {
+        const queryCache = queryClient.getQueryCache();
+        const queries = queryCache.findAll({ queryKey: ["/api/tokens"] });
+        for (const query of queries) {
+          if (Array.isArray(query.state.data)) {
+            const found = query.state.data.find((t: any) => t.id === id);
+            if (found) return found as Token;
+          }
+        }
+        return undefined;
+      },
+    },
   });
 
   const walletAddress = state.status === "connected" ? state.address : undefined;

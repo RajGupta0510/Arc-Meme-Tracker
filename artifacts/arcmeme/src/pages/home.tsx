@@ -107,7 +107,7 @@ function TerminalActivityFeed() {
       return res.json();
     },
     refetchInterval: 5000,
-    gcTime: 0,
+    staleTime: 5000,
   });
 
   const { data: leaderboard = [] } = useQuery<any[]>({
@@ -118,7 +118,7 @@ function TerminalActivityFeed() {
       return res.json();
     },
     refetchInterval: 15000,
-    gcTime: 0,
+    staleTime: 10000,
   });
 
   const topTrader = leaderboard[0]?.address || "0x1a2e3f4...e0f";
@@ -396,7 +396,7 @@ export function HomePage() {
     data: stats,
     isError: statsError,
     refetch: refetchStats,
-  } = useGetPlatformStats({ query: { queryKey: getGetPlatformStatsQueryKey(), refetchInterval: 15000, gcTime: 0 } });
+  } = useGetPlatformStats({ query: { queryKey: getGetPlatformStatsQueryKey(), refetchInterval: 15000, staleTime: 10000 } });
 
   const [sort, setSort] = useState<ListTokensSort>(ListTokensSort.trending);
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -474,7 +474,7 @@ export function HomePage() {
     refetch: refetchTokens,
   } = useListTokens(
     { sort, limit: 100 },
-    { query: { queryKey: getListTokensQueryKey({ sort, limit: 100 }), refetchInterval: 15000, gcTime: 0 } },
+    { query: { queryKey: getListTokensQueryKey({ sort, limit: 100 }), refetchInterval: 15000, staleTime: 10000 } },
   );
 
   useEffect(() => {
