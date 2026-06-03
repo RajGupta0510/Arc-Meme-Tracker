@@ -98,7 +98,6 @@ function MiniSparkline({ token, accentColor }: { token: Token; accentColor: stri
     </svg>
   );
 }
-
 function TerminalActivityFeed() {
   const { data: signals = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/intelligence/signals"],
@@ -109,6 +108,22 @@ function TerminalActivityFeed() {
     },
     refetchInterval: 5000,
   });
+
+  const { data: leaderboard = [] } = useQuery<any[]>({
+    queryKey: ["/api/leaderboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/leaderboard");
+      if (!res.ok) throw new Error("Failed to fetch leaderboard");
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  const topTrader = leaderboard[0]?.address || "0x1a2e3f4...e0f";
+  const displayTopTrader = topTrader !== "0x1a2e3f4...e0f"
+    ? `${topTrader.slice(0, 6)}...${topTrader.slice(-4)}`
+    : topTrader;
+  const activeCount = leaderboard.length;
 
   const { playTickerClick } = useAudioTelemetry();
   const prevLengthRef = useRef(signals.length);
@@ -212,13 +227,28 @@ function TerminalActivityFeed() {
           </Link>
         </div>
         <div className="grid grid-cols-2 gap-2 text-[10px]">
-          <div className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
-            <span className="text-muted-foreground text-[8px] uppercase">Top Smart Money</span>
-            <span className="font-extrabold text-primary truncate mt-1">0x1a2e3f4...e0f</span>
-          </div>
+          {topTrader !== "0x1a2e3f4...e0f" ? (
+            <Link
+              href={`/wallet/${topTrader}`}
+              className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer"
+            >
+              <span className="text-muted-foreground text-[8px] uppercase">Top Smart Money</span>
+              <span className="font-extrabold text-primary truncate mt-1 flex items-center gap-1">
+                {displayTopTrader}
+                <ArrowUpRight className="w-3 h-3 text-primary shrink-0" />
+              </span>
+            </Link>
+          ) : (
+            <div className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
+              <span className="text-muted-foreground text-[8px] uppercase">Top Smart Money</span>
+              <span className="font-extrabold text-primary truncate mt-1">{displayTopTrader}</span>
+            </div>
+          )}
           <div className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
             <span className="text-muted-foreground text-[8px] uppercase">Active Degens</span>
-            <span className="font-extrabold text-foreground truncate mt-1">10+ tracked</span>
+            <span className="font-extrabold text-foreground truncate mt-1">
+              {activeCount > 0 ? `${activeCount} tracked` : "10+ tracked"}
+            </span>
           </div>
         </div>
       </div>
