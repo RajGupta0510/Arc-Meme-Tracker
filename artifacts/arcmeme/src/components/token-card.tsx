@@ -111,8 +111,9 @@ export function TokenCard({
             </div>
             <div className="text-right">
               <div className="font-mono font-bold text-sm text-foreground/90">${formatPrice(price)}</div>
-              <div className={`font-mono text-xs font-semibold ${isPositive ? "text-primary" : "text-destructive"}`}>
-                {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{change24h.toFixed(2)}%
+              <div className={`flex items-center justify-end gap-1 font-mono text-xs font-semibold whitespace-nowrap ${isPositive ? "text-primary" : "text-destructive"}`}>
+                <span>{isPositive ? "▲" : "▼"}</span>
+                <span>{isPositive ? "+" : ""}{change24h.toFixed(2)}%</span>
               </div>
             </div>
           </div>

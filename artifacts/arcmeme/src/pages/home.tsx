@@ -107,6 +107,7 @@ function TerminalActivityFeed() {
       return res.json();
     },
     refetchInterval: 5000,
+    gcTime: 0,
   });
 
   const { data: leaderboard = [] } = useQuery<any[]>({
@@ -117,6 +118,7 @@ function TerminalActivityFeed() {
       return res.json();
     },
     refetchInterval: 15000,
+    gcTime: 0,
   });
 
   const topTrader = leaderboard[0]?.address || "0x1a2e3f4...e0f";
@@ -287,8 +289,9 @@ function TrendingCard({
       </div>
       <div className="text-right">
         <div className="font-mono text-xs font-bold text-foreground/90">${formatPrice(live.price)}</div>
-        <div className={`font-mono text-[10px] font-bold ${isPositive ? "text-primary" : "text-destructive"}`}>
-          {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{live.change24h.toFixed(2)}%
+        <div className={`flex items-center justify-end gap-1 font-mono text-[10px] font-bold whitespace-nowrap ${isPositive ? "text-primary" : "text-destructive"}`}>
+          <span>{isPositive ? "▲" : "▼"}</span>
+          <span>{isPositive ? "+" : ""}{live.change24h.toFixed(2)}%</span>
         </div>
       </div>
       {/* Subtle Dynamic Bottom Accent Line */}
@@ -345,8 +348,11 @@ function TokenTableRow({
         <MiniSparkline token={token} accentColor={accentColor} />
       </td>
       <LivePriceCell price={live.price} />
-      <td className={`px-3 py-2 text-right font-mono font-bold border-y border-border/30 ${live.change24h >= 0 ? "text-primary" : "text-destructive"}`}>
-        {live.change24h >= 0 ? "▲ +" : "▼ "}{live.change24h.toFixed(2)}%
+      <td className="px-3 py-2 border-y border-border/30">
+        <div className={`flex items-center justify-end gap-1 font-mono font-bold whitespace-nowrap ${live.change24h >= 0 ? "text-primary" : "text-destructive"}`}>
+          <span>{live.change24h >= 0 ? "▲" : "▼"}</span>
+          <span>{live.change24h >= 0 ? "+" : ""}{live.change24h.toFixed(2)}%</span>
+        </div>
       </td>
       <td className="px-3 py-2 text-right font-mono font-bold text-foreground/80 border-y border-border/30">
         ${formatCompactNumber(live.marketCap)}
@@ -390,7 +396,7 @@ export function HomePage() {
     data: stats,
     isError: statsError,
     refetch: refetchStats,
-  } = useGetPlatformStats({ query: { queryKey: getGetPlatformStatsQueryKey(), refetchInterval: 15000 } });
+  } = useGetPlatformStats({ query: { queryKey: getGetPlatformStatsQueryKey(), refetchInterval: 15000, gcTime: 0 } });
 
   const [sort, setSort] = useState<ListTokensSort>(ListTokensSort.trending);
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -468,7 +474,7 @@ export function HomePage() {
     refetch: refetchTokens,
   } = useListTokens(
     { sort, limit: 100 },
-    { query: { queryKey: getListTokensQueryKey({ sort, limit: 100 }), refetchInterval: 15000 } },
+    { query: { queryKey: getListTokensQueryKey({ sort, limit: 100 }), refetchInterval: 15000, gcTime: 0 } },
   );
 
   useEffect(() => {

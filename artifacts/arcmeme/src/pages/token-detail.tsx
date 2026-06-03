@@ -1163,9 +1163,10 @@ export function TokenDetailPage() {
                   >
                     ${formatPrice(displayPrice)}
                   </div>
-                  <div className="flex items-center gap-1.5 justify-end font-mono text-xs font-bold mt-0.5">
-                    <span className={isPositive ? "text-primary" : "text-destructive"}>
-                      {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{displayChange24h.toFixed(2)}%
+                  <div className="flex items-center gap-1 justify-end font-mono text-xs font-bold mt-0.5">
+                    <span className={`flex items-center gap-1 whitespace-nowrap ${isPositive ? "text-primary" : "text-destructive"}`}>
+                      <span>{isPositive ? "▲" : "▼"}</span>
+                      <span>{isPositive ? "+" : ""}{displayChange24h.toFixed(2)}%</span>
                     </span>
                   </div>
                 </div>
