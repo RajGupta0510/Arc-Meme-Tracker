@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import type React from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
 import { ListTokensSort, getListTokensQueryKey, useListTokens } from "@workspace/api-client-react";
@@ -24,7 +25,8 @@ import {
   Check,
   Loader2,
   Volume2,
-  VolumeX
+  VolumeX,
+  Trophy
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -65,37 +67,11 @@ export function Navbar() {
   return (
     <div className="w-full flex flex-col border-b border-border/80 bg-background/82 backdrop-blur-xl sticky top-0 z-50">
       <div className="flex h-16 items-center px-4 w-full justify-between">
-        <Link href="/" className="lg:hidden flex items-center gap-2 font-bold text-xl tracking-tighter text-foreground">
-          <div className="flex h-6 w-6 items-center justify-center rounded overflow-hidden border border-primary/40 bg-black/40">
-            <img src="/arcmeme-logo.png" alt="ArcMeme Logo" className="h-full w-full object-cover" />
-          </div>
-          <span className="bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">ArcMeme</span>
-        </Link>
-        <div className="hidden lg:flex items-center gap-3">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Arc Testnet</div>
-          <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary))]" />
-          <div className="font-mono text-xs text-primary">Live terminal</div>
-        </div>
-
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-1">
-            <MarketUtilityDrawers />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleMute}
-              className="h-9 w-9 text-muted-foreground hover:text-primary transition-colors"
-              title={isMuted ? "Unmute terminal sounds" : "Mute terminal sounds"}
-            >
-              {isMuted ? <VolumeX className="h-4.5 w-4.5" /> : <Volume2 className="h-4.5 w-4.5" />}
-            </Button>
-          </div>
-          <Button asChild size="sm" className="hidden sm:inline-flex gap-2 font-mono text-xs uppercase text-black">
-            <Link href="/launch"><PlusCircle className="h-3.5 w-3.5" /> Launch Token</Link>
-          </Button>
+        {/* Left Side Logo Brand and Mobile Menu */}
+        <div className="flex items-center gap-2">
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden text-muted-foreground hover:text-foreground">
+              <Button variant="ghost" size="icon" className="lg:hidden text-muted-foreground hover:text-foreground h-9 w-9 p-0">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -123,6 +99,26 @@ export function Navbar() {
                   <PlusCircle className="h-4 w-4" />
                   <span className="font-semibold">Launch Token</span>
                 </Link>
+                <Link href="/leaderboard" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
+                  <Trophy className="h-4 w-4" />
+                  <span className="font-semibold">Leaderboard</span>
+                </Link>
+
+                <div className="h-[1px] bg-border/40 my-2" />
+
+                <div className="px-3 mb-1 text-[9px] uppercase tracking-widest text-muted-foreground font-mono">
+                  Discovery Stack
+                </div>
+                
+                <Link href="/?filter=watchlist" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
+                  <Star className="h-4 w-4" />
+                  <span className="font-semibold">Watchlist</span>
+                </Link>
+
+                <Link href="/?alerts=show" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
+                  <Bell className="h-4 w-4" />
+                  <span className="font-semibold">Alerts</span>
+                </Link>
               </nav>
 
               <div className="p-4 border-t border-border/70">
@@ -132,6 +128,38 @@ export function Navbar() {
               </div>
             </SheetContent>
           </Sheet>
+
+          <Link href="/" className="flex items-center gap-2 font-bold text-xl tracking-tighter text-foreground">
+            <div className="flex h-6 w-6 items-center justify-center rounded overflow-hidden border border-primary/40 bg-black/40">
+              <img src="/arcmeme-logo.png" alt="ArcMeme Logo" className="h-full w-full object-cover" />
+            </div>
+            <span className="bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">ArcMeme</span>
+          </Link>
+        </div>
+
+        <div className="hidden lg:flex items-center gap-3">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Arc Testnet</div>
+          <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary))]" />
+          <div className="font-mono text-xs text-primary">Live terminal</div>
+        </div>
+
+        {/* Right Side Controls and Wallet Connect */}
+        <div className="flex items-center gap-2 sm:gap-6">
+          <div className="flex items-center gap-1">
+            <MarketUtilityDrawers />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleMute}
+              className="h-9 w-9 text-muted-foreground hover:text-primary transition-colors"
+              title={isMuted ? "Unmute terminal sounds" : "Mute terminal sounds"}
+            >
+              {isMuted ? <VolumeX className="h-4.5 w-4.5" /> : <Volume2 className="h-4.5 w-4.5" />}
+            </Button>
+          </div>
+          <Button asChild size="sm" className="hidden sm:inline-flex gap-2 font-mono text-xs uppercase text-black">
+            <Link href="/launch"><PlusCircle className="h-3.5 w-3.5" /> Launch Token</Link>
+          </Button>
 
           <WalletButton
             state={state}
@@ -386,6 +414,32 @@ function WalletButton({
 }: WalletButtonProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const hasMetaMask = typeof window !== "undefined" && window.ethereum !== undefined;
+  const isMobile = typeof navigator !== "undefined" && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  const handleWalletConnectClick = async () => {
+    if (hasMetaMask && !isMobile) {
+      await onConnect();
+    } else {
+      setModalOpen(true);
+    }
+  };
+
+  const handleMetaMaskSelect = async () => {
+    setModalOpen(false);
+    if (isMobile) {
+      const dappUrl = window.location.host + window.location.pathname + window.location.search;
+      window.location.href = `https://metamask.app.link/dapp/${dappUrl}`;
+    } else {
+      if (hasMetaMask) {
+        await onConnect();
+      } else {
+        window.open("https://metamask.io/download/", "_blank");
+      }
+    }
+  };
 
   const handleCopy = () => {
     if (state.status === "connected") {
@@ -529,14 +583,54 @@ function WalletButton({
 
   // Disconnected state
   return (
-    <Button
-      onClick={onConnect}
-      className="font-mono text-xs uppercase text-black font-bold tracking-wider hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all h-9 rounded-lg"
-      data-testid="button-connect-wallet"
-    >
-      <Wallet className="h-3.5 w-3.5 mr-1.5" />
-      Connect Wallet
-    </Button>
+    <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+      <DialogTrigger asChild>
+        <Button
+          onClick={handleWalletConnectClick}
+          className="font-mono text-xs uppercase text-black font-bold tracking-wider hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all h-9 rounded-lg"
+          data-testid="button-connect-wallet"
+        >
+          <Wallet className="h-3.5 w-3.5 mr-1.5" />
+          Connect Wallet
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-[360px] border-border bg-card/95 backdrop-blur-xl p-6 font-mono text-xs text-foreground z-[200]">
+        <DialogHeader className="mb-4">
+          <DialogTitle className="font-mono text-sm uppercase tracking-widest text-primary text-center">
+            Connect Wallet
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-muted-foreground text-center text-[10px] leading-relaxed">
+            {isMobile 
+              ? "Select MetaMask to open the ArcMeme terminal in your MetaMask App browser." 
+              : "Select MetaMask to connect your browser extension wallet."}
+          </p>
+          
+          <button
+            onClick={handleMetaMaskSelect}
+            className="w-full flex items-center justify-between border border-border/80 hover:border-primary/50 bg-background/40 hover:bg-primary/5 p-4 rounded-lg transition-all text-left outline-none group cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded bg-black/40 border border-primary/20 p-1.5 shrink-0 group-hover:border-primary/50 transition-colors">
+                <Wallet className="h-4.5 w-4.5 text-primary" />
+              </div>
+              <div>
+                <span className="font-bold text-foreground group-hover:text-primary transition-colors text-sm">MetaMask</span>
+                <div className="text-[9px] text-muted-foreground mt-0.5">
+                  {isMobile ? "Open MetaMask Mobile App" : hasMetaMask ? "Connect browser extension" : "Install MetaMask Wallet"}
+                </div>
+              </div>
+            </div>
+            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+          </button>
+          
+          <div className="pt-2 border-t border-border/40 text-[9px] text-muted-foreground leading-relaxed text-center">
+            ArcMeme secure telemetry indexer. By connecting, you authorize on-chain interactions on the Arc Testnet.
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
