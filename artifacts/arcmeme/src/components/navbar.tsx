@@ -1,4 +1,4 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import type React from "react";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,8 @@ function readJson<T>(key: string, fallback: T): T {
 export function Navbar() {
   const { state, connect, disconnect, switchToArcTestnet, getShortAddress } = useWallet();
   const { isMuted, toggleMute } = useAudioTelemetry();
+  const [location] = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isConnected = state.status === "connected";
   const isConnecting = state.status === "connecting";
@@ -70,7 +72,7 @@ export function Navbar() {
       <div className="flex h-16 items-center px-4 w-full justify-between">
         {/* Left Side Logo Brand and Mobile Menu */}
         <div className="flex items-center gap-2 lg:gap-4">
-          <Sheet>
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden text-muted-foreground hover:text-foreground h-8 w-8 sm:h-9 sm:w-9 p-0">
                 <Menu className="h-5 w-5" />
@@ -88,19 +90,35 @@ export function Navbar() {
               </div>
               
               <nav className="flex flex-col gap-1.5 p-4 flex-1">
-                <Link href="/" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
+                <Link href="/" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
+                  location === "/"
+                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
+                }`}>
                   <Activity className="h-4 w-4" />
                   <span className="font-semibold">Terminal</span>
                 </Link>
-                <Link href="/portfolio" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
+                <Link href="/portfolio" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
+                  location === "/portfolio"
+                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
+                }`}>
                   <Wallet className="h-4 w-4" />
                   <span className="font-semibold">Portfolio</span>
                 </Link>
-                <Link href="/launch" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
+                <Link href="/launch" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
+                  location === "/launch"
+                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
+                }`}>
                   <PlusCircle className="h-4 w-4" />
                   <span className="font-semibold">Launch Token</span>
                 </Link>
-                <Link href="/leaderboard" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
+                <Link href="/leaderboard" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
+                  location === "/leaderboard"
+                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
+                }`}>
                   <Trophy className="h-4 w-4" />
                   <span className="font-semibold">Leaderboard</span>
                 </Link>
@@ -114,19 +132,19 @@ export function Navbar() {
                       Discovery Stack
                     </div>
                     <div className="space-y-2 text-xs">
-                      <Link href="/?filter=watchlist" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+                      <Link href="/?filter=watchlist" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
                         <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
                           <Star className="h-3.5 w-3.5 text-primary group-hover:scale-110 transition-transform" /> Watchlist
                         </span>
                         <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">local</span>
                       </Link>
-                      <Link href="/?alerts=show" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+                      <Link href="/?alerts=show" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
                         <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
                           <Bell className="h-3.5 w-3.5 text-primary group-hover:animate-bounce" /> Alerts
                         </span>
                         <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">armed</span>
                       </Link>
-                      <Link href="/launch" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+                      <Link href="/launch" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
                         <span className="flex items-center gap-2 text-muted-foreground group-hover:text-yellow-400 transition-colors">
                           <WalletCards className="h-3.5 w-3.5 text-yellow-400" /> Arc Pooling
                         </span>
@@ -448,7 +466,7 @@ function WalletButton({
     setModalOpen(false);
     if (isMobile) {
       const dappUrl = window.location.host + window.location.pathname + window.location.search;
-      window.location.href = `https://metamask.app.link/dapp/${dappUrl}`;
+      window.location.href = `metamask://dapp/${dappUrl}`;
     } else {
       if (hasMetaMask) {
         await onConnect();

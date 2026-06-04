@@ -797,7 +797,7 @@ export function HomePage() {
           </main>
 
           {/* Right Column: Live Swap logs (Only desktop view) */}
-          <aside className="hidden lg:block w-full">
+          <aside className="w-full">
             <TerminalActivityFeed />
           </aside>
         </div>
