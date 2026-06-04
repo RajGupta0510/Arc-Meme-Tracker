@@ -26,7 +26,8 @@ import {
   Loader2,
   Volume2,
   VolumeX,
-  Trophy
+  Trophy,
+  WalletCards
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -68,10 +69,10 @@ export function Navbar() {
     <div className="w-full flex flex-col border-b border-border/80 bg-background/82 backdrop-blur-xl sticky top-0 z-50">
       <div className="flex h-16 items-center px-4 w-full justify-between">
         {/* Left Side Logo Brand and Mobile Menu */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 lg:gap-4">
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden text-muted-foreground hover:text-foreground h-9 w-9 p-0">
+              <Button variant="ghost" size="icon" className="lg:hidden text-muted-foreground hover:text-foreground h-8 w-8 sm:h-9 sm:w-9 p-0">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -106,19 +107,34 @@ export function Navbar() {
 
                 <div className="h-[1px] bg-border/40 my-2" />
 
-                <div className="px-3 mb-1 text-[9px] uppercase tracking-widest text-muted-foreground font-mono">
-                  Discovery Stack
+                <div className="mt-2">
+                  <div className="rounded-lg border border-border/80 bg-card/50 p-3">
+                    <div className="mb-3 flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                      <Activity className="h-3.5 w-3.5 text-primary" />
+                      Discovery Stack
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      <Link href="/?filter=watchlist" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+                        <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
+                          <Star className="h-3.5 w-3.5 text-primary group-hover:scale-110 transition-transform" /> Watchlist
+                        </span>
+                        <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">local</span>
+                      </Link>
+                      <Link href="/?alerts=show" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+                        <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
+                          <Bell className="h-3.5 w-3.5 text-primary group-hover:animate-bounce" /> Alerts
+                        </span>
+                        <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">armed</span>
+                      </Link>
+                      <Link href="/launch" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
+                        <span className="flex items-center gap-2 text-muted-foreground group-hover:text-yellow-400 transition-colors">
+                          <WalletCards className="h-3.5 w-3.5 text-yellow-400" /> Arc Pooling
+                        </span>
+                        <span className="font-mono text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">beta</span>
+                      </Link>
+                    </div>
+                  </div>
                 </div>
-                
-                <Link href="/?filter=watchlist" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
-                  <Star className="h-4 w-4" />
-                  <span className="font-semibold">Watchlist</span>
-                </Link>
-
-                <Link href="/?alerts=show" className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all">
-                  <Bell className="h-4 w-4" />
-                  <span className="font-semibold">Alerts</span>
-                </Link>
               </nav>
 
               <div className="p-4 border-t border-border/70">
@@ -129,32 +145,33 @@ export function Navbar() {
             </SheetContent>
           </Sheet>
 
-          <Link href="/" className="flex items-center gap-2 font-bold text-xl tracking-tighter text-foreground">
+          <Link href="/" className="flex lg:hidden items-center gap-2 font-bold text-xl tracking-tighter text-foreground">
             <div className="flex h-6 w-6 items-center justify-center rounded overflow-hidden border border-primary/40 bg-black/40">
               <img src="/arcmeme-logo.png" alt="ArcMeme Logo" className="h-full w-full object-cover" />
             </div>
-            <span className="bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">ArcMeme</span>
+            <span className="hidden min-[400px]:inline bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent">ArcMeme</span>
           </Link>
-        </div>
 
-        <div className="hidden lg:flex items-center gap-3">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Arc Testnet</div>
-          <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary))]" />
-          <div className="font-mono text-xs text-primary">Live terminal</div>
+          {/* Desktop Arc Testnet Badge docked to left */}
+          <div className="hidden lg:flex items-center gap-3">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Arc Testnet</div>
+            <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary))]" />
+            <div className="font-mono text-xs text-primary">Live terminal</div>
+          </div>
         </div>
 
         {/* Right Side Controls and Wallet Connect */}
-        <div className="flex items-center gap-2 sm:gap-6">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 sm:gap-6">
+          <div className="flex items-center gap-0.5 sm:gap-1">
             <MarketUtilityDrawers />
             <Button
               variant="ghost"
               size="icon"
               onClick={toggleMute}
-              className="h-9 w-9 text-muted-foreground hover:text-primary transition-colors"
+              className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-primary transition-colors p-0"
               title={isMuted ? "Unmute terminal sounds" : "Mute terminal sounds"}
             >
-              {isMuted ? <VolumeX className="h-4.5 w-4.5" /> : <Volume2 className="h-4.5 w-4.5" />}
+              {isMuted ? <VolumeX className="h-4 w-4 sm:h-4.5 sm:w-4.5" /> : <Volume2 className="h-4 w-4 sm:h-4.5 sm:w-4.5" />}
             </Button>
           </div>
           <Button asChild size="sm" className="hidden sm:inline-flex gap-2 font-mono text-xs uppercase text-black">
@@ -273,7 +290,7 @@ function MarketUtilityDrawers() {
   }, [tokens, alerts, notifiedAlerts, toast]);
 
   return (
-    <div className="hidden sm:flex items-center gap-1">
+    <div className="flex items-center gap-0.5 sm:gap-1">
       <UtilityDrawer icon={<Star className="h-4 w-4" />} title="Watchlist" onOpen={refreshLocalState}>
         <div className="space-y-2">
           {watchedTokens.length === 0 ? (
@@ -361,11 +378,11 @@ function UtilityDrawer({
   return (
     <Sheet onOpenChange={(open) => open && onOpen()}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-primary">
+        <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-primary p-0">
           {icon}
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-[360px] border-border bg-background/95 p-4 backdrop-blur-xl sm:max-w-[420px]">
+      <SheetContent className="w-full max-w-[360px] sm:max-w-[420px] border-border bg-background/95 p-4 backdrop-blur-xl">
         <SheetHeader className="mb-4">
           <SheetTitle className="font-mono text-sm uppercase tracking-widest text-primary">{title}</SheetTitle>
         </SheetHeader>
@@ -475,7 +492,7 @@ function WalletButton({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/80 bg-black/40 backdrop-blur-md hover:border-primary/50 transition-all font-mono text-xs text-foreground outline-none group"
+            className="flex items-center gap-1.5 sm:gap-2 px-2 py-1.5 sm:px-3 rounded-lg border border-border/80 bg-black/40 backdrop-blur-md hover:border-primary/50 transition-all font-mono text-xs text-foreground outline-none group"
             data-testid="button-connected-wallet"
           >
             {/* Status dot */}
@@ -587,11 +604,11 @@ function WalletButton({
       <DialogTrigger asChild>
         <Button
           onClick={handleWalletConnectClick}
-          className="font-mono text-xs uppercase text-black font-bold tracking-wider hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all h-9 rounded-lg"
+          className="font-mono text-xs uppercase text-black font-bold tracking-wider hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all h-9 rounded-lg px-2 sm:px-4"
           data-testid="button-connect-wallet"
         >
-          <Wallet className="h-3.5 w-3.5 mr-1.5" />
-          Connect Wallet
+          <Wallet className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+          <span>Connect<span className="hidden sm:inline"> Wallet</span></span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-[360px] border-border bg-card/95 backdrop-blur-xl p-6 font-mono text-xs text-foreground z-[200]">
