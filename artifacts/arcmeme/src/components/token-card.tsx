@@ -82,11 +82,11 @@ export function TokenCard({
       className="h-full"
     >
       <Card
-        className="h-full overflow-hidden p-0 border border-border/80 bg-card/60 backdrop-blur-md flex flex-col group rounded-lg relative transition-all duration-300"
+        className="h-full overflow-hidden p-0 border border-border/80 bg-card/45 backdrop-blur-md flex flex-col group rounded-lg relative glow-card-interactive"
         style={{
           // Use style variables to support dynamic styling
-          ["--token-glow" as any]: `${accentColor}15`,
-          ["--token-border" as any]: `${accentColor}50`,
+          ["--token-glow" as any]: `${accentColor}22`,
+          ["--token-border" as any]: `${accentColor}60`,
         }}
       >
         {/* Dynamic Accent Background Overlay */}

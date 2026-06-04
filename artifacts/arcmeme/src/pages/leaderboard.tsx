@@ -154,7 +154,7 @@ export function LeaderboardPage() {
 
       {/* Arena Highlights */}
       <div className="grid gap-6 md:grid-cols-3 relative z-10">
-        <Card className="border-primary/10 bg-card/30 backdrop-blur-lg shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+        <Card className="glass-panel border-primary/20 bg-primary/5 shadow-[0_4px_24px_rgba(0,0,0,0.4)] hover:border-primary/45 hover:shadow-[0_0_20px_rgba(34,197,94,0.08)] hover:-translate-y-0.5 transition-all duration-300">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <span className="font-mono text-xs text-muted-foreground uppercase">Top Earner</span>
@@ -175,7 +175,7 @@ export function LeaderboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-primary/10 bg-card/30 backdrop-blur-lg shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+        <Card className="glass-panel border-primary/20 bg-primary/5 shadow-[0_4px_24px_rgba(0,0,0,0.4)] hover:border-primary/45 hover:shadow-[0_0_20px_rgba(34,197,94,0.08)] hover:-translate-y-0.5 transition-all duration-300">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <span className="font-mono text-xs text-muted-foreground uppercase">Most Active</span>
@@ -196,7 +196,7 @@ export function LeaderboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-primary/10 bg-card/30 backdrop-blur-lg shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+        <Card className="glass-panel border-blue-500/20 bg-blue-500/5 shadow-[0_4px_24px_rgba(0,0,0,0.4)] hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.08)] hover:-translate-y-0.5 transition-all duration-300">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <span className="font-mono text-xs text-muted-foreground uppercase">LP Giant</span>
@@ -219,7 +219,7 @@ export function LeaderboardPage() {
       </div>
 
       {/* Leaderboard Table Container */}
-      <Card className="border-border/80 bg-card/30 backdrop-blur-lg shadow-[0_4px_30px_rgba(0,0,0,0.3)] overflow-hidden relative z-10">
+      <Card className="glass-panel overflow-hidden relative z-10">
         <CardHeader className="border-b border-border/70 py-4">
           <CardTitle className="font-mono text-xs uppercase text-muted-foreground flex items-center justify-between">
             <span>Rankings sorted by PnL</span>

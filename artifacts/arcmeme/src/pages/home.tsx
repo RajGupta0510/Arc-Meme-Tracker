@@ -143,7 +143,7 @@ function TerminalActivityFeed() {
   const intelSignals = signals.filter((s) => s.type !== "arbitrage_opportunity");
 
   return (
-    <div className="glass-panel p-4 flex flex-col gap-3 font-mono h-full border border-border/80 bg-card/45 backdrop-blur-md">
+    <div className="glass-panel p-4 flex flex-col gap-3 font-mono h-full">
       <div className="flex items-center justify-between border-b border-border/40 pb-2">
         <div className="flex items-center gap-2 text-xs uppercase font-bold text-primary">
           <span className="h-1.5 w-1.5 rounded-full bg-primary terminal-pulse animate-ping" />
@@ -601,7 +601,7 @@ export function HomePage() {
         )}
 
         {/* Global Statistics Panel */}
-        <section className="glass-panel overflow-hidden p-4 md:p-5 border border-border/80 bg-card/50 backdrop-blur-md">
+        <section className="glass-panel overflow-hidden p-4 md:p-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <div className="mb-2 flex items-center gap-2 font-mono text-[9px] uppercase tracking-widest text-primary">
@@ -637,7 +637,7 @@ export function HomePage() {
         )}
 
         {/* High-Tech Unified Control Bar */}
-        <section className="glass-panel p-3 border border-border/80 bg-card/45 backdrop-blur-md">
+        <section className="glass-panel p-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
             {/* Search + Import */}
             <div className="relative min-w-0 flex-1 flex gap-2">
@@ -732,7 +732,7 @@ export function HomePage() {
           
           {/* Main Discovery Columns */}
           <main className="min-w-0 space-y-4">
-            <section className="glass-panel p-3.5 border border-border/80 bg-card/45 backdrop-blur-md">
+            <section className="glass-panel p-3.5">
               <div className="mb-3.5 flex items-center justify-between">
                 <div>
                   <h2 className="text-xs font-bold uppercase tracking-wider font-mono flex items-center gap-1.5">
@@ -809,12 +809,16 @@ export function HomePage() {
 
 function StatBox({ label, value, icon, active = false }: { label: string; value: string; icon?: React.ReactNode; active?: boolean }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-background/45 p-3 flex items-start justify-between group hover:border-primary/30 transition-all duration-300">
+    <div className={`rounded-lg border p-3 flex items-start justify-between group transition-all duration-300 ${
+      active
+        ? "border-primary/35 bg-primary/5 hover:border-primary/50 shadow-[0_0_15px_rgba(34,197,94,0.08)]"
+        : "border-border/70 bg-background/40 hover:border-primary/30 hover:bg-background/50 hover:shadow-[0_0_12px_rgba(255,255,255,0.02)]"
+    }`}>
       <div>
-        <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{label}</div>
-        <div className={`mt-1 font-mono text-base font-bold ${active ? "bg-gradient-to-r from-white via-primary to-primary bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(34,197,94,0.3)]" : "text-foreground/90"}`}>{value}</div>
+        <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground group-hover:text-muted-foreground/80 transition-colors">{label}</div>
+        <div className={`mt-1 font-mono text-base font-bold ${active ? "text-primary drop-shadow-[0_0_8px_rgba(34,197,94,0.3)]" : "text-foreground/90"}`}>{value}</div>
       </div>
-      <div className="opacity-70 group-hover:opacity-100 transition-opacity duration-300 mt-0.5">
+      <div className="opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-300 mt-0.5">
         {icon}
       </div>
     </div>
