@@ -338,10 +338,7 @@ function MarketUtilityDrawers() {
           {watchedTokens.length === 0 ? (
             <EmptyDrawerState text="Star tokens in the terminal to pin them here." />
           ) : watchedTokens.map((token) => (
-            <Link key={token.id} href={`/token/${token.id}`} className="flex items-center justify-between rounded-md border border-border bg-background/40 p-3 transition-colors hover:border-primary/50">
-              <span className="font-bold" style={{ color: token.logoColor || "#22c55e" }}>${token.ticker}</span>
-              <span className="font-mono text-xs text-primary">${formatPrice(token.price)}</span>
-            </Link>
+            <WatchlistItem key={token.id} token={token} />
           ))}
         </div>
       </UtilityDrawer>
@@ -390,15 +387,7 @@ function MarketUtilityDrawers() {
           {activity.length === 0 ? (
             <EmptyDrawerState text="No launched token activity yet." />
           ) : activity.map((token) => (
-            <Link key={token.id} href={`/token/${token.id}`} className="block rounded-md border border-border bg-background/40 p-3 transition-colors hover:border-primary/50">
-              <div className="flex items-center justify-between">
-                <span className="font-bold" style={{ color: token.logoColor || "#22c55e" }}>${token.ticker}</span>
-                <span className={`font-mono text-[10px] uppercase ${token.marketType === "amm_pool" ? "text-primary" : "text-yellow-400"}`}>
-                  {token.marketType === "amm_pool" ? "Pool live" : "Needs pool"}
-                </span>
-              </div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">Vol ${formatCompactNumber(token.volume24h)} · Tx {token.txCount}</div>
-            </Link>
+            <ActivityItem key={token.id} token={token} />
           ))}
         </div>
       </UtilityDrawer>
@@ -690,6 +679,40 @@ function WalletButton({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function WatchlistItem({ token }: { token: Token }) {
+  const live = useLiveTokenData(token);
+  const isPositive = live.change24h >= 0;
+  return (
+    <Link href={`/token/${token.id}`} className="flex items-center justify-between rounded-md border border-border bg-background/40 p-3 transition-colors hover:border-primary/50">
+      <div>
+        <span className="font-bold" style={{ color: token.logoColor || "#22c55e" }}>${token.ticker}</span>
+        <div className={`font-mono text-[9px] mt-0.5 ${isPositive ? "text-primary" : "text-destructive"}`}>
+          {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{live.change24h.toFixed(2)}%
+        </div>
+      </div>
+      <span className="font-mono text-xs text-primary font-bold">${formatPrice(live.price)}</span>
+    </Link>
+  );
+}
+
+function ActivityItem({ token }: { token: Token }) {
+  const live = useLiveTokenData(token);
+  return (
+    <Link href={`/token/${token.id}`} className="block rounded-md border border-border bg-background/40 p-3 transition-colors hover:border-primary/50">
+      <div className="flex items-center justify-between">
+        <span className="font-bold" style={{ color: token.logoColor || "#22c55e" }}>${token.ticker}</span>
+        <span className={`font-mono text-[10px] uppercase ${token.marketType === "amm_pool" ? "text-primary" : "text-yellow-400"}`}>
+          {token.marketType === "amm_pool" ? "Pool live" : "Needs pool"}
+        </span>
+      </div>
+      <div className="mt-2 font-mono text-[11px] text-muted-foreground flex justify-between items-center">
+        <span>Vol ${formatCompactNumber(live.volume24h)} · Tx {live.txCount}</span>
+        <span className="text-primary font-bold">${formatPrice(live.price)}</span>
+      </div>
+    </Link>
   );
 }
 
