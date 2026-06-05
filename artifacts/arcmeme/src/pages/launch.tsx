@@ -534,7 +534,7 @@ export function LaunchPage() {
 
             <div className="grid grid-cols-2 gap-3.5">
               <label className="space-y-1">
-                <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">
+                <span className="text-[10.5px] uppercase tracking-wider text-[#acc0b4] font-bold">
                   {launchedToken.ticker} AMOUNT
                 </span>
                 <Input
@@ -542,19 +542,19 @@ export function LaunchPage() {
                   min="0"
                   value={liquidityTokenAmount}
                   onChange={(event) => setLiquidityTokenAmount(event.target.value)}
-                  className="font-mono text-xs bg-black/40 border-border focus:border-primary/80 focus-visible:ring-primary/20"
+                  className="font-mono text-xs bg-black/40 border-border focus:border-primary/80 focus-visible:ring-primary/20 placeholder:text-[#acc0b4]/35"
                   disabled={isCreatingLiquidity}
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">WUSDC AMOUNT</span>
+                <span className="text-[10.5px] uppercase tracking-wider text-[#acc0b4] font-bold">WUSDC AMOUNT</span>
                 <Input
                   type="number"
                   min="0"
                   step="0.001"
                   value={liquidityUsdcAmount}
                   onChange={(event) => setLiquidityUsdcAmount(event.target.value)}
-                  className="font-mono text-xs bg-black/40 border-border focus:border-primary/80 focus-visible:ring-primary/20"
+                  className="font-mono text-xs bg-black/40 border-border focus:border-primary/80 focus-visible:ring-primary/20 placeholder:text-[#acc0b4]/35"
                   disabled={isCreatingLiquidity}
                 />
               </label>
@@ -681,7 +681,7 @@ export function LaunchPage() {
               <div className="absolute top-0 right-0 w-16 h-full bg-gradient-to-l from-primary/5 to-transparent pointer-events-none" />
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                <span className="text-muted-foreground">CREATOR_ADDRESS:</span>
+                <span className="text-[#acc0b4] text-[12.5px] font-bold tracking-wider font-mono">CREATOR_ADDRESS:</span>
               </div>
               <span className="text-primary font-bold truncate max-w-[200px]">{connectedAddress}</span>
             </div>
@@ -689,18 +689,18 @@ export function LaunchPage() {
             <div className="flex items-center justify-between px-3.5 py-2.5 rounded-lg border border-yellow-500/20 bg-yellow-500/5 text-xs font-mono">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                <span className="text-yellow-500/80">NO_WALLET_BOUND:</span>
+                <span className="text-yellow-500/80 text-[12.5px] font-bold tracking-wider font-mono">NO_WALLET_BOUND:</span>
               </div>
               <span className="text-muted-foreground/80 italic">Auto-generates deterministic address</span>
             </div>
           )}
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
 
               {/* Logo Upload */}
-              <div className="space-y-2">
-                <label className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-2 w-full">
+              <div className="space-y-3.5">
+                <label className="text-[12.5px] font-bold uppercase tracking-wider text-[#acc0b4] font-mono flex items-center gap-2 w-full">
                   <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
                   <span>SYMBOL_LOGO_MATRIX</span>
                   <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
@@ -784,8 +784,8 @@ export function LaunchPage() {
                   control={form.control}
                   name="name"
                   render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                    <FormItem className="space-y-3">
+                      <FormLabel className="uppercase text-[12.5px] font-bold tracking-wider text-[#acc0b4] font-mono flex items-center gap-2 w-full">
                         <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
                         <span>TOKEN_NAME</span>
                         <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
@@ -794,7 +794,7 @@ export function LaunchPage() {
                       <FormControl>
                         <Input 
                           placeholder="e.g. Arc Mutator" 
-                          className="font-mono text-sm bg-black/40 border-border/80 focus:border-primary/80 focus-visible:ring-primary/20 h-10 transition-all rounded-md" 
+                          className="font-mono text-sm bg-black/50 border-border/45 hover:border-primary/30 hover:shadow-[0_0_8px_rgba(0,255,136,0.08)] focus:border-primary/80 focus-visible:ring-primary/20 h-11 py-3 px-4 transition-all rounded-md placeholder:text-[#acc0b4]/35 text-foreground" 
                           {...field} 
                         />
                       </FormControl>
@@ -805,9 +805,8 @@ export function LaunchPage() {
                 <FormField
                   control={form.control}
                   name="ticker"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                  render={({ field }) => (                    <FormItem className="space-y-3">
+                      <FormLabel className="uppercase text-[12.5px] font-bold tracking-wider text-[#acc0b4] font-mono flex items-center gap-2 w-full">
                         <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
                         <span>TICKER_SYMBOL</span>
                         <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
@@ -816,7 +815,7 @@ export function LaunchPage() {
                       <FormControl>
                         <Input
                           placeholder="e.g. ARCM"
-                          className="font-mono uppercase text-sm bg-black/40 border-border/80 focus:border-primary/80 focus-visible:ring-primary/20 h-10 transition-all rounded-md"
+                          className="font-mono uppercase text-sm bg-black/50 border-border/45 hover:border-primary/30 hover:shadow-[0_0_8px_rgba(0,255,136,0.08)] focus:border-primary/80 focus-visible:ring-primary/20 h-11 py-3 px-4 transition-all rounded-md placeholder:text-[#acc0b4]/35 text-foreground"
                           {...field}
                           onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                         />
@@ -831,9 +830,8 @@ export function LaunchPage() {
               <FormField
                 control={form.control}
                 name="description"
-                render={({ field }) => (
-                  <FormItem className="space-y-1.5">
-                    <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                render={({ field }) => (                  <FormItem className="space-y-3">
+                    <FormLabel className="uppercase text-[12.5px] font-bold tracking-wider text-[#acc0b4] font-mono flex items-center gap-2 w-full">
                       <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
                       <span>INDEX_DESCRIPTION</span>
                       <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
@@ -842,7 +840,7 @@ export function LaunchPage() {
                     <FormControl>
                       <Textarea
                         placeholder="Input token roadmap, utility algorithms, or degen parameters..."
-                        className="resize-none h-24 font-mono text-sm bg-black/40 border-border/80 focus:border-primary/80 focus-visible:ring-primary/20 transition-all rounded-md"
+                        className="resize-none h-28 py-3 px-4 font-mono text-sm bg-black/50 border-border/45 hover:border-primary/30 hover:shadow-[0_0_8px_rgba(0,255,136,0.08)] focus:border-primary/80 focus-visible:ring-primary/20 transition-all rounded-md placeholder:text-[#acc0b4]/35 text-foreground"
                         {...field}
                       />
                     </FormControl>
@@ -856,8 +854,8 @@ export function LaunchPage() {
                 control={form.control}
                 name="totalSupply"
                 render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                  <FormItem className="space-y-3.5">
+                    <FormLabel className="uppercase text-[12.5px] font-bold tracking-wider text-[#acc0b4] font-mono flex items-center gap-2 w-full">
                       <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
                       <span>TOTAL_SUPPLY_LIMIT</span>
                       <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
@@ -896,10 +894,11 @@ export function LaunchPage() {
                       <div className="relative">
                         <Input
                           type="number"
-                          className="font-mono text-sm bg-black/40 border-border/80 focus:border-primary/80 focus-visible:ring-primary/20 h-10 transition-all rounded-md animate-none"
+                          placeholder="0.00"
+                          className="font-mono text-sm bg-black/50 border-border/45 hover:border-primary/30 hover:shadow-[0_0_8px_rgba(0,255,136,0.08)] focus:border-primary/80 focus-visible:ring-primary/20 h-11 py-3 px-4 transition-all rounded-md placeholder:text-[#acc0b4]/35 text-foreground animate-none"
                           {...field}
                         />
-                        <div className="absolute right-3 top-2.5 text-[9px] font-bold text-muted-foreground tracking-widest pointer-events-none">
+                        <div className="absolute right-3 top-3 text-[9px] font-bold text-muted-foreground tracking-widest pointer-events-none">
                           UNITS
                         </div>
                       </div>
@@ -914,8 +913,8 @@ export function LaunchPage() {
                 control={form.control}
                 name="logoColor"
                 render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="uppercase text-[9px] tracking-widest text-muted-foreground font-extrabold flex items-center gap-2 w-full">
+                  <FormItem className="space-y-3.5">
+                    <FormLabel className="uppercase text-[14px] font-bold tracking-wider text-[#acc0b4] font-mono flex items-center gap-2 w-full">
                       <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
                       <span>BRAND_HEX_COLOR_PALETTE</span>
                       <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
@@ -960,15 +959,15 @@ export function LaunchPage() {
               />
 
               {/* Socials */}
-              <div className="space-y-4 pt-4 border-t border-border/40">
-                <h3 className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-2 w-full">
+              <div className="space-y-5 pt-4 border-t border-border/40">
+                <h3 className="text-[14px] font-bold uppercase tracking-wider text-[#acc0b4] font-mono flex items-center gap-2 w-full">
                   <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-pulse" />
                   <span>METADATA_SOCIAL_RELAYS</span>
                   <div className="h-[1px] bg-gradient-to-r from-border/50 to-transparent flex-1" />
                   <span className="text-[7px] text-primary/60 font-mono">INDEX_NET</span>
                 </h3>
                 
-                <div className="space-y-2.5">
+                <div className="space-y-3.5">
                   <FormField
                     control={form.control}
                     name="website"
@@ -977,11 +976,11 @@ export function LaunchPage() {
                         <FormControl>
                           <div className="relative flex items-center">
                             <div className="absolute left-3 pl-0.5 border-r border-border/40 pr-2.5">
-                              <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                              <Globe className="h-3.5 w-3.5 text-muted-foreground/70" />
                             </div>
                             <Input 
-                              placeholder="Website URL (e.g. https://arcmutator.ai)" 
-                              className="bg-black/40 border-border/80 focus:border-primary/80 focus-visible:ring-primary/20 h-10 font-mono text-sm pl-12 rounded-md" 
+                              placeholder="https://your-token-site.ai" 
+                              className="bg-black/50 border-border/45 hover:border-primary/30 hover:shadow-[0_0_8px_rgba(0,255,136,0.08)] focus:border-primary/80 focus-visible:ring-primary/20 h-11 py-3 pl-12 pr-4 font-mono text-sm rounded-md placeholder:text-[#acc0b4]/35 text-foreground" 
                               {...field} 
                             />
                           </div>
@@ -999,11 +998,11 @@ export function LaunchPage() {
                         <FormControl>
                           <div className="relative flex items-center">
                             <div className="absolute left-3 pl-0.5 border-r border-border/40 pr-2.5">
-                              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current text-muted-foreground"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current text-muted-foreground/70"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
                             </div>
                             <Input 
-                              placeholder="X Handle (e.g. arc_mutator)" 
-                              className="bg-black/40 border-border/80 focus:border-primary/80 focus-visible:ring-primary/20 h-10 font-mono text-sm pl-12 rounded-md" 
+                              placeholder="X/Twitter handle" 
+                              className="bg-black/50 border-border/45 hover:border-primary/30 hover:shadow-[0_0_8px_rgba(0,255,136,0.08)] focus:border-primary/80 focus-visible:ring-primary/20 h-11 py-3 pl-12 pr-4 font-mono text-sm rounded-md placeholder:text-[#acc0b4]/35 text-foreground" 
                               {...field} 
                             />
                           </div>
@@ -1021,11 +1020,11 @@ export function LaunchPage() {
                         <FormControl>
                           <div className="relative flex items-center">
                             <div className="absolute left-3 pl-0.5 border-r border-border/40 pr-2.5">
-                              <Send className="h-3.5 w-3.5 text-muted-foreground" />
+                              <Send className="h-3.5 w-3.5 text-muted-foreground/70" />
                             </div>
                             <Input 
-                              placeholder="Telegram Link (e.g. https://t.me/arcmutator)" 
-                              className="bg-black/40 border-border/80 focus:border-primary/80 focus-visible:ring-primary/20 h-10 font-mono text-sm pl-12 rounded-md" 
+                              placeholder="https://t.me/your-group" 
+                              className="bg-black/50 border-border/45 hover:border-primary/30 hover:shadow-[0_0_8px_rgba(0,255,136,0.08)] focus:border-primary/80 focus-visible:ring-primary/20 h-11 py-3 pl-12 pr-4 font-mono text-sm rounded-md placeholder:text-[#acc0b4]/35 text-foreground" 
                               {...field} 
                             />
                           </div>
@@ -1195,8 +1194,8 @@ export function LaunchPage() {
                   {isOneClick && (
                     <div className="grid grid-cols-2 gap-4 pt-3.5 mt-3 border-t border-primary/20 z-10 relative">
                       <label className="space-y-1.5">
-                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold flex items-center gap-1">
-                          <span className="w-1 h-1 bg-primary/70 rounded-full animate-pulse" />
+                        <span className="text-[10.5px] uppercase tracking-wider text-[#acc0b4] font-bold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
                           WUSDC_SEED_FUND
                         </span>
                         <div className="relative">
@@ -1276,7 +1275,7 @@ export function LaunchPage() {
         {/* Right: Live Holographic Preview */}
         <div className="flex flex-col gap-4 lg:sticky lg:top-8">
           <div className="flex items-center justify-between">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+            <h3 className="text-[11.5px] font-bold uppercase tracking-widest text-[#acc0b4] flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-pulse" />
               LIVE_TOKEN_TELEMETRY_RADAR
             </h3>
@@ -1405,16 +1404,16 @@ export function LaunchPage() {
             </div>
 
             {/* Live System Diagnostics / Ratios */}
-            <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg space-y-1.5 text-[9px] font-mono text-left">
-              <div className="flex justify-between items-center text-muted-foreground">
+            <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg space-y-1.5 text-[10.5px] font-mono text-left">
+              <div className="flex justify-between items-center text-[#acc0b4]">
                 <span>ESTIMATED RESERVES RATIO</span>
                 <span className="text-foreground font-bold">10.00% (SEED LOCK)</span>
               </div>
-              <div className="flex justify-between items-center text-muted-foreground">
+              <div className="flex justify-between items-center text-[#acc0b4]">
                 <span>AMM ROUTER FACTOR</span>
                 <span className="text-foreground font-bold">ApexiSwap V1</span>
               </div>
-              <div className="flex justify-between items-center text-muted-foreground">
+              <div className="flex justify-between items-center text-[#acc0b4]">
                 <span>SLIPPAGE SAFE INDEX</span>
                 <span className="text-emerald-500 font-bold flex items-center gap-1">
                   <span className="w-1 h-1 rounded-full bg-emerald-500 animate-ping" />
