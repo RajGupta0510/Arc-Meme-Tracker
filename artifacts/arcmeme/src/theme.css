@@ -1,0 +1,84 @@
+/* ArcMeme Cyber OS Theme Configuration */
+:root {
+  /* Color Registry */
+  --bg-base: #080B0F;
+  --bg-card: #0C111A;
+  --bg-sidebar: #06090D;
+  
+  --accent-neon: #00FF88;
+  --accent-neon-muted: rgba(0, 255, 136, 0.15);
+  --accent-neon-dark: #00B35E;
+  --accent-neon-glow: rgba(0, 255, 136, 0.4);
+  --accent-neon-glow-hover: rgba(0, 255, 136, 0.35);
+  --accent-neon-glow-card: rgba(0, 255, 136, 0.25);
+
+  --accent-destructive: #FF3B5C;
+  --accent-destructive-glow: rgba(255, 59, 92, 0.35);
+  --accent-destructive-glow-muted: rgba(255, 59, 92, 0.15);
+  
+  --color-success: #00FF88;
+  --color-warning: #FFB800;
+  --color-danger: #FF3B5C;
+  --color-info: #00E1FF;
+
+  --text-primary: #F3F4F6;
+  --text-secondary: #9CA3AF;
+  --text-muted: #4B5563;
+  
+  --border-cyber: rgba(0, 255, 136, 0.12);
+  --border-muted: rgba(255, 255, 255, 0.06);
+  --grid-line: rgba(0, 255, 136, 0.02);
+  
+  --glass-blur: 12px;
+  --glass-bg: rgba(12, 17, 26, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.05);
+
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --grid-unit: 8px;
+}
+
+/* Base CRT Scanline texture overlay */
+.scanlines-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 255, 136, 0.015) 50%
+  );
+  background-size: 100% 4px;
+  z-index: 99;
+  pointer-events: none;
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+  .scanlines-overlay,
+  .scanlines,
+  .animate-slow-pulse,
+  .animate-slow-pulse-reverse,
+  .terminal-pulse,
+  .animate-glitch,
+  .sparkline-path {
+    animation: none !important;
+    transition: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+  .shimmer-hover::after {
+    display: none !important;
+  }
+}
+
+.cyber-search-focus:focus {
+  box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.27), 0 0 16px rgba(0, 255, 136, 0.13) !important;
+  border-color: #00FF88 !important;
+  outline: none !important;
+}

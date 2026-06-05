@@ -14,6 +14,7 @@ import { ImportTokenModal } from "@/components/import-token-modal";
 import { formatAddress, formatCompactNumber, formatPrice } from "@/lib/utils";
 import { Grid3X3, Search, SlidersHorizontal, Star, Table2, Flame, Award, Clock, Users, ArrowUpRight, TrendingUp, ShieldAlert, Zap, Activity } from "lucide-react";
 import { useEffect, useMemo, useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
 import { useToast } from "@/hooks/use-toast";
@@ -94,11 +95,27 @@ function MiniSparkline({ token, accentColor }: { token: Token; accentColor: stri
 
   return (
     <svg viewBox="0 0 120 60" className="h-11 w-28 overflow-visible" style={{ color: accentColor }}>
-      <path d={path} fill="none" stroke="currentColor" strokeWidth="2" style={{ filter: `drop-shadow(0 0 5px ${accentColor}90)` }} />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="2" className="sparkline-path" style={{ filter: `drop-shadow(0 0 6px ${accentColor})` }} />
     </svg>
   );
 }
+function TypewriterText({ text }: { text: string }) {
+  const [displayedText, setDisplayedText] = useState("");
+  useEffect(() => {
+    let i = 0;
+    const interval = setInterval(() => {
+      setDisplayedText(text.slice(0, i + 1));
+      i++;
+      if (i >= text.length) clearInterval(interval);
+    }, 8);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  return <span className="font-mono">{displayedText}</span>;
+}
+
 function TerminalActivityFeed() {
+  const isReduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const { data: signals = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/intelligence/signals"],
     queryFn: async () => {
@@ -149,7 +166,7 @@ function TerminalActivityFeed() {
           <span className="h-1.5 w-1.5 rounded-full bg-primary terminal-pulse animate-ping" />
           Arc Intelligence Feed
         </div>
-        <span className="text-[9px] text-muted-foreground uppercase tracking-widest animate-pulse">Telemetry Live</span>
+        <span className="text-[9px] text-muted-foreground uppercase tracking-widest animate-glitch select-none">Telemetry Live</span>
       </div>
 
       {/* Title Header */}
@@ -160,62 +177,74 @@ function TerminalActivityFeed() {
         </div>
       </div>
 
-      <div className="space-y-3 overflow-y-auto max-h-[500px] pr-1 text-xs select-none">
+      <div className="space-y-3 overflow-y-auto overflow-x-hidden max-h-[500px] pr-1 text-xs select-none thin-scrollbar">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 gap-2">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Syncing Feed...</span>
           </div>
         ) : intelSignals.length === 0 ? (
-          <div className="text-[10px] text-muted-foreground text-center py-12 italic border border-dashed border-border/40 rounded p-4 bg-black/20">
+          <div className="text-[10px] text-muted-foreground text-center py-12 italic border border-dashed border-border/40 rounded-lg p-4 bg-black/20">
             [SYS] No security signals reported. Awaiting active contract syncs...
           </div>
         ) : (
           intelSignals.map((sig) => {
             const isCritical = sig.severity === "critical";
             const isWarning = sig.severity === "warning";
+            const isWhale = sig.type === "whale_buy" || sig.type === "whale_sell" || sig.title.toLowerCase().includes("whale");
+
             const typeColor = isCritical
-              ? "border-destructive/50 bg-destructive/10 text-destructive"
+              ? "border-destructive/40 bg-destructive/10 text-destructive font-bold"
+              : isWhale
+              ? "border-amber-500/40 bg-amber-500/20 text-amber-400 font-bold"
               : isWarning
-              ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
-              : "border-primary/30 bg-primary/10 text-primary";
+              ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400 font-bold"
+              : "border-primary/30 bg-primary/10 text-primary font-bold";
 
             const sideGlow = isCritical
-              ? "border-l-destructive shadow-[inset_4px_0_12px_rgba(239,68,68,0.06)]"
+              ? "border-l-destructive shadow-[inset_4px_0_12px_rgba(255,59,92,0.06)]"
+              : isWhale
+              ? "border-l-amber-500 shadow-[inset_4px_0_12px_rgba(245,158,11,0.06)]"
               : isWarning
               ? "border-l-yellow-500 shadow-[inset_4px_0_12px_rgba(234,179,8,0.06)]"
-              : "border-l-primary shadow-[inset_4px_0_12px_rgba(34,197,94,0.06)]";
+              : "border-l-primary shadow-[inset_4px_0_12px_rgba(0,255,136,0.06)]";
 
             return (
-              <Link
-                href={`/token/${sig.tokenId}`}
+              <motion.div
+                initial={isReduced ? {} : { x: 40, opacity: 0 }}
+                animate={isReduced ? {} : { x: 0, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 260, damping: 20 }}
                 key={sig.id}
-                className={`block border-l-2 pl-3 py-2 pr-2 rounded bg-card/10 hover:bg-card/45 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 cursor-pointer group ${sideGlow}`}
               >
-                <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5">
-                  <span className={`px-1.5 py-0.5 rounded-[2px] text-[7px] font-extrabold tracking-wider border ${typeColor} flex items-center gap-1`}>
-                    {sig.type === "whale_buy" ? (
-                      <TrendingUp className="h-2.5 w-2.5 text-primary shrink-0" />
-                    ) : sig.type === "whale_sell" ? (
-                      <TrendingUp className="h-2.5 w-2.5 text-destructive shrink-0 rotate-90" />
-                    ) : (
-                      <Activity className="h-2.5 w-2.5 text-primary shrink-0" />
-                    )}
-                    {sig.title.replace(/[^\x00-\x7F]/g, "").trim()}
-                  </span>
-                  <span>{new Date(sig.timestamp).toLocaleTimeString()}</span>
-                </div>
-                <div className="text-foreground/90 group-hover:text-foreground font-mono text-[10px] leading-relaxed transition-colors">
-                  {sig.message}
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[8px] text-muted-foreground">
-                  <span className="text-primary font-bold group-hover:underline">Trade Ticker ${sig.ticker}</span>
-                  <span className="flex items-center gap-1">
-                    <span className={`w-1 h-1 rounded-full ${isCritical ? "bg-destructive animate-ping" : isWarning ? "bg-yellow-400" : "bg-primary animate-pulse"}`} />
-                    Active Signal
-                  </span>
-                </div>
-              </Link>
+                <Link
+                  href={`/token/${sig.tokenId}`}
+                  className={`block border-l-2 pl-3 py-2 pr-2 rounded-lg bg-card/10 hover:bg-card/45 border-y border-r border-border/40 hover:border-primary/40 transition-all duration-200 cursor-pointer group ${sideGlow}`}
+                >
+                  <div className="flex items-center justify-between text-[8px] text-muted-foreground mb-1.5 font-mono">
+                    <span className={`px-1.5 py-0.5 rounded-sm text-[7px] font-extrabold tracking-wider border ${typeColor} flex items-center gap-1`}>
+                      {sig.type === "whale_buy" ? (
+                        <TrendingUp className="h-2.5 w-2.5 text-primary shrink-0" />
+                      ) : sig.type === "whale_sell" ? (
+                        <TrendingUp className="h-2.5 w-2.5 text-destructive shrink-0 rotate-90" />
+                      ) : (
+                        <Activity className="h-2.5 w-2.5 text-primary shrink-0" />
+                      )}
+                      {sig.title.replace(/[^\x00-\x7F]/g, "").trim()}
+                    </span>
+                    <span className="font-mono text-[9px] text-muted-foreground/60">{new Date(sig.timestamp).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="text-foreground/90 group-hover:text-foreground font-mono text-[10px] leading-relaxed transition-colors mt-1">
+                    <TypewriterText text={sig.message} />
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between text-[8px] text-muted-foreground font-mono">
+                    <span className="text-primary font-bold group-hover:underline">Trade Ticker ${sig.ticker}</span>
+                    <span className="flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isCritical ? "bg-destructive animate-ping" : isWhale ? "bg-amber-400 animate-pulse" : isWarning ? "bg-yellow-400" : "bg-primary animate-pulse"}`} />
+                      Active Signal
+                    </span>
+                  </div>
+                </Link>
+              </motion.div>
             );
           })
         )}
@@ -232,7 +261,7 @@ function TerminalActivityFeed() {
           {topTrader !== "0x1a2e3f4...e0f" ? (
             <Link
               href={`/wallet/${topTrader}`}
-              className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer"
+              className="rounded-lg border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer"
             >
               <span className="text-muted-foreground text-[8px] uppercase">Top Smart Money</span>
               <span className="font-extrabold text-primary truncate mt-1 flex items-center gap-1">
@@ -241,12 +270,12 @@ function TerminalActivityFeed() {
               </span>
             </Link>
           ) : (
-            <div className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
               <span className="text-muted-foreground text-[8px] uppercase">Top Smart Money</span>
               <span className="font-extrabold text-primary truncate mt-1">{displayTopTrader}</span>
             </div>
           )}
-          <div className="rounded border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-2 flex flex-col justify-between">
             <span className="text-muted-foreground text-[8px] uppercase">Active Degens</span>
             <span className="font-extrabold text-foreground truncate mt-1">
               {activeCount > 0 ? `${activeCount} tracked` : "10+ tracked"}
@@ -255,6 +284,41 @@ function TerminalActivityFeed() {
         </div>
       </div>
     </div>
+  );
+}
+
+function PriceSlotFlip({ price }: { price: number }) {
+  const priceStr = formatPrice(price);
+  const isReduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (isReduced) {
+    return <span>${priceStr}</span>;
+  }
+
+  return (
+    <span className="flex justify-end overflow-hidden">
+      <span>$</span>
+      {priceStr.split("").map((char, idx) => {
+        const isDigit = /\d/.test(char);
+        if (!isDigit) return <span key={idx}>{char}</span>;
+        return (
+          <motion.span
+            key={idx}
+            initial={{ y: 14, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{
+              type: "spring",
+              stiffness: 280,
+              damping: 14,
+              delay: idx * 0.02,
+            }}
+            className="inline-block"
+          >
+            {char}
+          </motion.span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -271,15 +335,32 @@ function TrendingCard({
   const accentColor = token.logoColor || "#22c55e";
   const isPositive = live.change24h >= 0;
 
+  const isReduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   return (
-    <div
+    <motion.div
       onClick={() => setLocation(`/token/${token.id}`)}
       key={token.id}
-      className="relative overflow-hidden p-3.5 glass-panel border border-border/70 hover:border-primary/50 bg-card/40 hover:bg-card/75 transition-all duration-300 group flex items-center justify-between cursor-pointer"
+      initial={isReduced ? {} : { opacity: 0, y: 10 }}
+      animate={isReduced ? {} : { opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04, duration: 0.22 }}
+      className="relative overflow-hidden p-3.5 rounded-xl border border-border/80 bg-card/45 backdrop-blur-md hover:border-primary/50 group flex items-center justify-between cursor-pointer glow-card-3d"
     >
       <div className="flex items-center gap-3">
-        <div className="text-xs font-mono font-bold text-muted-foreground">#0{index + 1}</div>
-        <TokenLogo token={token} size="sm" />
+        {/* Animated rank badge with pulse ring */}
+        <div className="relative flex items-center justify-center">
+          <div className="absolute inset-0 rounded-md bg-primary/20 animate-ping pointer-events-none" />
+          <div className="text-[10px] font-mono font-extrabold px-1.5 py-0.5 rounded-sm bg-primary/10 border border-primary/25 text-primary tracking-wider relative z-10">
+            #0{index + 1}
+          </div>
+        </div>
+        {/* Token logo avatar with drop-shadow glow ring */}
+        <div 
+          className="relative group-hover:scale-105 transition-transform duration-300"
+          style={{ filter: `drop-shadow(0 0 6px ${accentColor})` }}
+        >
+          <TokenLogo token={token} size="sm" />
+        </div>
         <div>
           <div className="font-bold text-sm tracking-tight flex items-center gap-1.5 font-mono">
             <span style={{ color: accentColor }} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.05)]">${token.ticker}</span>
@@ -288,15 +369,18 @@ function TrendingCard({
         </div>
       </div>
       <div className="text-right">
-        <div className="font-mono text-xs font-bold text-foreground/90">${formatPrice(live.price)}</div>
-        <div className={`flex items-center justify-end gap-1 font-mono text-[10px] font-bold whitespace-nowrap ${isPositive ? "text-primary" : "text-destructive"}`}>
+        {/* Slot-machine price flip on mount */}
+        <div className="font-mono text-xs font-bold text-foreground/90">
+          <PriceSlotFlip price={live.price} />
+        </div>
+        <div className={`flex items-center justify-end gap-1 font-mono text-[10px] font-extrabold whitespace-nowrap mt-0.5 ${isPositive ? "text-primary" : "text-destructive"}`}>
           <span>{isPositive ? "▲" : "▼"}</span>
           <span>{isPositive ? "+" : ""}{live.change24h.toFixed(2)}%</span>
         </div>
       </div>
       {/* Subtle Dynamic Bottom Accent Line */}
-      <div className="absolute bottom-0 left-0 right-0 h-[2px] transition-all duration-300" style={{ backgroundColor: accentColor, opacity: 0.35 }} />
-    </div>
+      <div className="absolute bottom-0 left-0 right-0 h-[2px] transition-all duration-300" style={{ backgroundColor: accentColor, opacity: 0.45 }} />
+    </motion.div>
   );
 }
 
@@ -305,11 +389,13 @@ function TokenTableRow({
   watchlist,
   toggleWatch,
   setLocation,
+  index,
 }: {
   token: Token;
   watchlist: string[];
   toggleWatch: (id: string) => void;
   setLocation: (loc: string) => void;
+  index: number;
 }) {
   const live = useLiveTokenData(token);
   const buys = Math.ceil(token.txCount * 0.54);
@@ -320,16 +406,24 @@ function TokenTableRow({
   const ageHours = Math.max(0, Math.floor((Date.now() - new Date(token.createdAt).getTime()) / 3_600_000));
   const accentColor = token.logoColor || "#22c55e";
 
+  const isReduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   return (
-    <tr
+    <motion.tr
       onClick={(e) => {
         const target = e.target as HTMLElement;
         if (target.closest("button") || target.closest("a")) return;
         setLocation(`/token/${token.id}`);
       }}
-      className="group rounded-lg bg-card/35 transition-all duration-300 hover:bg-card/75 border border-border/20 cursor-pointer"
+      initial={isReduced ? {} : { opacity: 0, y: 8 }}
+      animate={isReduced ? {} : { opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index, 6) * 0.05, duration: 0.22 }}
+      className="group bg-card/25 odd:bg-card/10 hover:bg-white/5 transition-all duration-300 border-y border-border/20 cursor-pointer relative"
+      style={{
+        ["--row-accent" as any]: accentColor
+      }}
     >
-      <td className="rounded-l-lg px-3 py-3 border-y border-l border-border/30">
+      <td className="rounded-l-lg px-3 py-3 border-y border-l border-border/30 border-l-2 border-l-transparent group-hover:border-l-[var(--accent-neon)] transition-all duration-300">
         <div className="flex items-center gap-2.5">
           <button
             type="button"
@@ -344,15 +438,24 @@ function TokenTableRow({
           </div>
         </div>
       </td>
-      <td className="px-3 py-2 border-y border-border/30">
-        <MiniSparkline token={token} accentColor={accentColor} />
+      <td className="px-4 py-2 border-y border-border/30 w-32 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-t from-[var(--row-accent)]/8 to-transparent blur-md opacity-25 group-hover:opacity-40 transition-opacity pointer-events-none" />
+        <div className="relative z-10">
+          <MiniSparkline token={token} accentColor={accentColor} />
+        </div>
       </td>
       <LivePriceCell price={live.price} />
-      <td className="px-3 py-2 border-y border-border/30">
-        <div className={`flex items-center justify-end gap-1 font-mono font-bold whitespace-nowrap ${live.change24h >= 0 ? "text-primary" : "text-destructive"}`}>
-          <span>{live.change24h >= 0 ? "▲" : "▼"}</span>
+      <td className="px-3 py-2 border-y border-border/30 text-right">
+        <span className={`inline-flex items-center gap-1 font-mono font-bold px-2 py-0.5 rounded-md text-xs select-none ${live.change24h >= 0 ? "text-[var(--accent-neon)] bg-[var(--accent-neon-muted)] border border-[var(--accent-neon)]/15" : "text-[var(--accent-destructive)] bg-[var(--accent-destructive-glow-muted)] border border-[var(--accent-destructive)]/15"}`}>
+          <motion.span
+            animate={{ rotate: live.change24h >= 0 ? 0 : 180 }}
+            transition={{ type: "spring", stiffness: 200, damping: 12 }}
+            className="inline-block origin-center"
+          >
+            ▲
+          </motion.span>
           <span>{live.change24h >= 0 ? "+" : ""}{live.change24h.toFixed(2)}%</span>
-        </div>
+        </span>
       </td>
       <td className="px-3 py-2 text-right font-mono font-bold text-foreground/80 border-y border-border/30">
         ${formatCompactNumber(live.marketCap)}
@@ -381,11 +484,11 @@ function TokenTableRow({
         {ageHours < 1 ? "<1h" : `${ageHours}h`}
       </td>
       <td className="rounded-r-lg px-3 py-2 text-right border-y border-r border-border/30">
-        <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-full hover:bg-secondary/40">
+        <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-full hover:bg-secondary/40 active:scale-95 transition-transform">
           <Link href={`/token/${token.id}`}><ArrowUpRight className="h-4 w-4" style={{ color: accentColor }} /></Link>
         </Button>
       </td>
-    </tr>
+    </motion.tr>
   );
 }
 
@@ -417,6 +520,15 @@ export function HomePage() {
   const [minMarketCap, setMinMarketCap] = useState("");
   const [watchlist, setWatchlist] = useState<string[]>(() => readJson("arcmeme.watchlist", []));
   const [alerts, setAlerts] = useState<AlertRule[]>(() => readJson("arcmeme.alerts", []));
+
+  const placeholders = ["Search ticker (e.g. $ARC)...", "Search contract (e.g. 0x52...f8)...", "Search token name (e.g. PePe)..."];
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prev) => (prev + 1) % placeholders.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -646,39 +758,49 @@ export function HomePage() {
                 <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search ticker, name, or contract address..."
-                  className="h-10 pl-9 font-mono text-xs bg-background/40 border-border/60 text-foreground/90 placeholder:text-muted-foreground/50 w-full"
+                  placeholder={placeholders[placeholderIndex]}
+                  className="h-10 pl-9 font-mono text-xs bg-background/40 border-border/60 text-foreground/90 placeholder:text-muted-foreground/50 w-full cyber-search-focus transition-all"
                 />
               </div>
               <Button
                 onClick={() => setImportModalOpen(true)}
-                className="h-10 border border-primary/20 hover:border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 text-xs font-bold uppercase tracking-wider px-4 font-mono shrink-0"
+                className="h-10 text-xs font-bold uppercase tracking-wider px-4 font-mono border border-[var(--accent-neon)] text-[var(--accent-neon)] bg-transparent hover:bg-[var(--accent-neon-muted)] hover:shadow-[0_0_15px_var(--accent-neon-glow-hover)] transition-all duration-300 active:scale-[0.97] rounded-lg shrink-0"
               >
                 Import Token
               </Button>
             </div>
-
+ 
             {/* Custom Tab Segment for Filters */}
-            <div className="flex bg-secondary/25 p-1 rounded-md border border-border/30">
-              {(["all", "watchlist"] as MarketFilter[]).map((filter) => (
-                <Button
-                  key={filter}
-                  variant="ghost"
-                  size="sm"
-                  className={`h-8 font-mono text-[10px] uppercase transition-all duration-200 px-3.5 rounded ${
-                    marketFilter === filter
-                      ? "bg-background text-primary shadow-sm font-bold border border-border/10"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => setMarketFilter(filter)}
-                >
-                  {filter.replace("-", " ")}
-                </Button>
-              ))}
+            <div className="flex bg-secondary/25 p-1 rounded-lg border border-border/30 relative">
+              {(["all", "watchlist"] as MarketFilter[]).map((filter) => {
+                const isActive = marketFilter === filter;
+                return (
+                  <Button
+                    key={filter}
+                    variant="ghost"
+                    size="sm"
+                    className={`h-8 font-mono text-[10px] uppercase transition-all duration-200 px-3.5 rounded-md relative select-none z-10 ${
+                      isActive
+                        ? "text-[var(--accent-neon)] font-bold bg-background/40 shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setMarketFilter(filter)}
+                  >
+                    <span className="relative z-10">{filter.replace("-", " ")}</span>
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeFilterTab"
+                        className="absolute bottom-0 left-1 right-1 h-[2.5px] bg-[var(--accent-neon)] shadow-[0_0_8px_var(--accent-neon)] z-20"
+                        transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                      />
+                    )}
+                  </Button>
+                );
+              })}
             </div>
-
+ 
             {/* Market Intelligence Ranking Tabs */}
-            <div className="flex bg-secondary/25 p-1 rounded-md border border-border/30 overflow-x-auto max-w-full">
+            <div className="flex bg-secondary/25 p-1 rounded-lg border border-border/30 overflow-x-auto max-w-full thin-scrollbar relative">
               {(["trending", "newest", "mostActive", "volume", "topGainers"] as ListTokensSort[]).map((tab) => {
                 const labels: Record<string, string> = {
                   trending: "Trending",
@@ -687,40 +809,48 @@ export function HomePage() {
                   volume: "Top Volume",
                   topGainers: "Top Gainers",
                 };
+                const isActive = sort === tab;
                 return (
                   <Button
                     key={tab}
                     variant="ghost"
                     size="sm"
-                    className={`h-8 font-mono text-[10px] uppercase transition-all duration-200 px-3.5 rounded shrink-0 ${
-                      sort === tab
-                        ? "bg-background text-primary font-bold shadow-sm border border-border/10"
+                    className={`h-8 font-mono text-[10px] uppercase transition-all duration-200 px-3.5 rounded-md relative select-none z-10 shrink-0 ${
+                      isActive
+                        ? "text-[var(--accent-neon)] font-bold bg-background/40 shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                     onClick={() => setSort(tab)}
                   >
-                    {labels[tab]}
+                    <span className="relative z-10">{labels[tab]}</span>
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeSortTab"
+                        className="absolute bottom-0 left-1 right-1 h-[2.5px] bg-[var(--accent-neon)] shadow-[0_0_8px_var(--accent-neon)] z-20"
+                        transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                      />
+                    )}
                   </Button>
                 );
               })}
             </div>
-
+ 
             {/* Grid vs Table View Toggles */}
-            <div className="flex items-center gap-1 rounded-md border border-border/50 bg-background/35 p-1">
-              <Button variant={viewMode === "grid" ? "default" : "ghost"} size="icon" className="h-7 w-7 rounded-[4px]" onClick={() => setViewMode("grid")}>
+            <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-background/35 p-1">
+              <Button variant={viewMode === "grid" ? "default" : "ghost"} size="icon" className="h-7 w-7 rounded" onClick={() => setViewMode("grid")}>
                 <Grid3X3 className="h-3.5 w-3.5" />
               </Button>
-              <Button variant={viewMode === "table" ? "default" : "ghost"} size="icon" className="h-7 w-7 rounded-[4px]" onClick={() => setViewMode("table")}>
+              <Button variant={viewMode === "table" ? "default" : "ghost"} size="icon" className="h-7 w-7 rounded" onClick={() => setViewMode("table")}>
                 <Table2 className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
-
+ 
           {/* Micro stats & search inputs */}
           <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
-            <Input value={minVolume} onChange={(e) => setMinVolume(e.target.value)} placeholder="Min Volume Threshold ($)" type="number" className="h-9 bg-background/30 border-border/40 font-mono text-[11px]" />
-            <Input value={minMarketCap} onChange={(e) => setMinMarketCap(e.target.value)} placeholder="Min Market Cap ($)" type="number" className="h-9 bg-background/30 border-border/40 font-mono text-[11px]" />
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono px-3 bg-secondary/15 rounded border border-border/30">
+            <Input value={minVolume} onChange={(e) => setMinVolume(e.target.value)} placeholder="Min Volume Threshold ($)" type="number" className="h-9 bg-background/30 border-border/40 font-mono text-[11px] cyber-search-focus transition-all rounded-md" />
+            <Input value={minMarketCap} onChange={(e) => setMinMarketCap(e.target.value)} placeholder="Min Market Cap ($)" type="number" className="h-9 bg-background/30 border-border/40 font-mono text-[11px] cyber-search-focus transition-all rounded-md" />
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono px-3 bg-secondary/15 rounded-lg border border-border/30">
               <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
               <span>{filteredTokens.length} active terminal markets matched</span>
             </div>
@@ -780,10 +910,11 @@ export function HomePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredTokens.map((token) => (
+                      {filteredTokens.map((token, idx) => (
                         <TokenTableRow
                           key={token.id}
                           token={token}
+                          index={idx}
                           watchlist={watchlist}
                           toggleWatch={toggleWatch}
                           setLocation={setLocation}
@@ -807,18 +938,91 @@ export function HomePage() {
   );
 }
 
-function StatBox({ label, value, icon, active = false }: { label: string; value: string; icon?: React.ReactNode; active?: boolean }) {
+function CountUpValue({ value }: { value: string }) {
+  const [displayVal, setDisplayVal] = useState("0");
+
+  useEffect(() => {
+    const isReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (isReduced) {
+      setDisplayVal(value);
+      return;
+    }
+
+    const match = value.match(/[\d.]+/);
+    if (!match) {
+      setDisplayVal(value);
+      return;
+    }
+    const numericStr = match[0];
+    const target = parseFloat(numericStr);
+    if (isNaN(target)) {
+      setDisplayVal(value);
+      return;
+    }
+
+    const prefix = value.substring(0, match.index || 0);
+    const suffix = value.substring((match.index || 0) + numericStr.length);
+
+    let start = 0;
+    const duration = 1200; // 1.2s count up
+    const startTime = performance.now();
+
+    let frameId: number;
+
+    const update = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out quad
+      const ease = progress * (2 - progress);
+      const current = start + ease * (target - start);
+
+      let formatted = current.toFixed(numericStr.includes(".") ? 1 : 0);
+      setDisplayVal(`${prefix}${formatted}${suffix}`);
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(update);
+      } else {
+        setDisplayVal(value);
+      }
+    };
+
+    frameId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frameId);
+  }, [value]);
+
+  return <span>{displayVal}</span>;
+}
+
+function StatBox({ 
+  label, 
+  value, 
+  icon, 
+  active = false,
+  sparkData = [35, 28, 42, 22, 38, 25, 45]
+}: { 
+  label: string; 
+  value: string; 
+  icon?: React.ReactNode; 
+  active?: boolean;
+  sparkData?: number[];
+}) {
+  const points = sparkData.map((val, idx) => `${idx === 0 ? "M" : "L"}${idx * 13},${50 - val}`).join(" ");
   return (
-    <div className={`rounded-lg border p-3 flex items-start justify-between group transition-all duration-300 ${
-      active
-        ? "border-primary/35 bg-primary/5 hover:border-primary/50 shadow-[0_0_15px_rgba(34,197,94,0.08)]"
-        : "border-border/70 bg-background/40 hover:border-primary/30 hover:bg-background/50 hover:shadow-[0_0_12px_rgba(255,255,255,0.02)]"
-    }`}>
-      <div>
-        <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground group-hover:text-muted-foreground/80 transition-colors">{label}</div>
-        <div className={`mt-1 font-mono text-base font-bold ${active ? "text-primary drop-shadow-[0_0_8px_rgba(34,197,94,0.3)]" : "text-foreground/90"}`}>{value}</div>
+    <div className={`rounded-md border border-white/10 p-3 min-h-[64px] flex items-start justify-between group relative overflow-hidden bg-white/5 backdrop-blur-md border-t-2 border-t-[var(--accent-neon)] hover:border-t-[var(--accent-neon-dark)] glow-card-3d`}>
+      {/* Background micro sparkline */}
+      <div className="absolute bottom-0 left-0 right-0 h-6 opacity-20 pointer-events-none">
+        <svg viewBox="0 0 80 50" className="w-full h-full overflow-visible text-white/40 group-hover:text-green-400/60 transition-colors">
+          <path d={points} fill="none" stroke="currentColor" strokeWidth="1.5" className="sparkline-path" />
+        </svg>
       </div>
-      <div className="opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-300 mt-0.5">
+
+      <div className="z-10">
+        <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground group-hover:text-muted-foreground/80 transition-colors">{label}</div>
+        <div className="mt-1.5 font-mono text-base font-extrabold text-foreground/90 group-hover:text-white transition-colors">
+          <CountUpValue value={value} />
+        </div>
+      </div>
+      <div className="opacity-75 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300 mt-0.5 z-10 text-[var(--accent-neon)]">
         {icon}
       </div>
     </div>

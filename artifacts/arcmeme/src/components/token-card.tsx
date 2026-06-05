@@ -27,7 +27,7 @@ export function TokenLogo({ token, size = "sm" }: { token: Token; size?: "sm" | 
   return (
     <div
       className={`${dim} rounded-full flex items-center justify-center font-bold text-white shadow-inner flex-shrink-0`}
-      style={{ backgroundColor: token.logoColor || "#22c55e" }}
+      style={{ backgroundColor: token.logoColor || "var(--accent-neon)" }}
     >
       {ticker.slice(0, 3)}
     </div>
@@ -45,8 +45,8 @@ function Sparkline({ token, accentColor }: { token: Token; accentColor: string }
 
   return (
     <svg viewBox="0 0 119 68" className="h-16 w-full overflow-visible" style={{ color: accentColor }}>
-      <path d={`${path} L119,68 L0,68 Z`} fill="currentColor" className="opacity-[0.06]" />
-      <path d={path} fill="none" stroke="currentColor" strokeWidth="2" style={{ filter: `drop-shadow(0 0 5px ${accentColor}80)` }} />
+      <path d={`${path} L119,68 L0,68 Z`} fill="currentColor" className="opacity-[0.03]" />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="2" className="sparkline-path" style={{ filter: `drop-shadow(0 0 6px ${accentColor})` }} />
     </svg>
   );
 }
@@ -71,8 +71,7 @@ export function TokenCard({
   
   const ticker = token.ticker || "TOKEN";
   const isPositive = change24h >= 0;
-  const isLive = token.marketType === "amm_pool" && Boolean(token.pairAddress);
-  const accentColor = token.logoColor || "#22c55e";
+  const accentColor = token.logoColor || "var(--accent-neon)";
 
   return (
     <motion.div
@@ -82,15 +81,14 @@ export function TokenCard({
       className="h-full"
     >
       <Card
-        className="h-full overflow-hidden p-0 border border-border/80 bg-card/45 backdrop-blur-md flex flex-col group rounded-lg relative glow-card-interactive"
+        className="h-full overflow-hidden p-0 border border-border/80 bg-card/45 backdrop-blur-md flex flex-col group rounded-xl relative glow-card-interactive"
         style={{
-          // Use style variables to support dynamic styling
-          ["--token-glow" as any]: `${accentColor}22`,
-          ["--token-border" as any]: `${accentColor}60`,
+          ["--token-glow" as any]: `${accentColor}18`,
+          ["--token-border" as any]: `${accentColor}50`,
         }}
       >
         {/* Dynamic Accent Background Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-black/20 opacity-40 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-black/25 opacity-40 pointer-events-none" />
         
         <Link href={`/token/${token.id}`} className="flex flex-1 flex-col gap-3.5 p-4 z-10 relative">
           <div className="flex items-start justify-between">
@@ -98,7 +96,7 @@ export function TokenCard({
               <div className="group-hover:scale-105 transition-transform duration-300 relative">
                 <TokenLogo token={token} size="sm" />
                 <div
-                  className="absolute inset-0 rounded-full blur-md opacity-25 group-hover:opacity-40 transition-opacity duration-300 pointer-events-none"
+                  className="absolute inset-0 rounded-full blur-md opacity-25 group-hover:opacity-45 transition-opacity duration-300 pointer-events-none"
                   style={{ backgroundColor: accentColor }}
                 />
               </div>
@@ -123,13 +121,13 @@ export function TokenCard({
           </div>
 
           <div className="grid grid-cols-2 gap-2 mt-auto pt-3 border-t border-border/40 font-mono">
-            <div className="flex flex-col bg-background/20 p-2 rounded border border-border/20">
+            <div className="flex flex-col bg-background/25 p-2 rounded-md border border-border/20">
               <span className="text-[9px] uppercase text-muted-foreground tracking-wider">MCap</span>
               <span className="text-xs font-bold text-foreground/80">${formatCompactNumber(marketCap)}</span>
             </div>
-            <div className="flex flex-col bg-background/20 p-2 rounded border border-border/20">
+            <div className="flex flex-col bg-background/25 p-2 rounded-md border border-border/20">
               <span className="text-[9px] uppercase text-muted-foreground tracking-wider">Volume (All-Time / 24h)</span>
-              <span className="text-xs font-bold text-foreground/80 flex flex-col">
+              <span className="text-xs font-bold text-foreground/80 flex flex-col font-mono">
                 <span>${formatCompactNumber(allTimeVolume)}</span>
                 <span className="text-[9px] text-muted-foreground font-normal">24h: ${formatCompactNumber(volume24h)}</span>
               </span>
@@ -138,7 +136,7 @@ export function TokenCard({
 
           <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground border-t border-border/30 pt-3">
             <span className="hover:text-foreground/80 transition-colors">{formatAddress(token.contractAddress ?? "")}</span>
-            <span className="uppercase text-[8px] px-1 bg-secondary/30 rounded border border-border/20">Tradeable</span>
+            <span className="uppercase text-[8px] px-1.5 py-0.5 bg-secondary/40 rounded-sm border border-border/25">Tradeable</span>
           </div>
         </Link>
 
@@ -147,7 +145,7 @@ export function TokenCard({
           <button
             type="button"
             onClick={() => onToggleWatch?.(token.id)}
-            className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-[10px] uppercase transition-colors ${
+            className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-[10px] uppercase transition-all duration-200 active:scale-95 ${
               watched ? "text-yellow-400 bg-yellow-400/5" : "text-muted-foreground hover:text-yellow-400 hover:bg-yellow-400/5"
             }`}
           >
@@ -156,7 +154,7 @@ export function TokenCard({
           </button>
           <Link
             href={`/token/${token.id}`}
-            className="flex flex-1 items-center justify-center border-l border-border/40 px-3 py-2 text-[10px] uppercase text-primary transition-all duration-300 hover:bg-primary/10"
+            className="flex flex-1 items-center justify-center border-l border-border/40 px-3 py-2 text-[10px] uppercase text-primary transition-all duration-300 hover:bg-primary/10 active:scale-95"
             style={{ color: accentColor }}
           >
             Trade →

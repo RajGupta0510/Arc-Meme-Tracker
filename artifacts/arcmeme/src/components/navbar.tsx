@@ -6,7 +6,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
-import { ListTokensSort, getListTokensQueryKey, useListTokens } from "@workspace/api-client-react";
+import { ListTokensSort, getListTokensQueryKey, useListTokens, type Token } from "@workspace/api-client-react";
+import { useLiveTokenData } from "@/hooks/use-live-token-data";
 import { formatCompactNumber, formatPrice } from "@/lib/utils";
 import { 
   Activity, 
@@ -27,8 +28,11 @@ import {
   Volume2,
   VolumeX,
   Trophy,
-  WalletCards
+  WalletCards,
+  BookOpen,
+  Bug
 } from "lucide-react";
+import { BugReportModal } from "@/components/bug-report-modal";
 import { useToast } from "@/hooks/use-toast";
 import {
   DropdownMenu,
@@ -62,6 +66,7 @@ export function Navbar() {
   const { isMuted, toggleMute } = useAudioTelemetry();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [bugModalOpen, setBugModalOpen] = useState(false);
 
   const isConnected = state.status === "connected";
   const isConnecting = state.status === "connecting";
@@ -92,7 +97,7 @@ export function Navbar() {
               <nav className="flex flex-col gap-1.5 p-4 flex-1">
                 <Link href="/" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
                   location === "/"
-                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    ? "border-l-2 border-l-primary border-y-primary/20 border-r-primary/20 bg-primary/12 text-primary font-bold shadow-sm"
                     : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
                 }`}>
                   <Activity className="h-4 w-4" />
@@ -100,7 +105,7 @@ export function Navbar() {
                 </Link>
                 <Link href="/portfolio" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
                   location === "/portfolio"
-                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    ? "border-l-2 border-l-primary border-y-primary/20 border-r-primary/20 bg-primary/12 text-primary font-bold shadow-sm"
                     : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
                 }`}>
                   <Wallet className="h-4 w-4" />
@@ -108,7 +113,7 @@ export function Navbar() {
                 </Link>
                 <Link href="/launch" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
                   location === "/launch"
-                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    ? "border-l-2 border-l-primary border-y-primary/20 border-r-primary/20 bg-primary/12 text-primary font-bold shadow-sm"
                     : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
                 }`}>
                   <PlusCircle className="h-4 w-4" />
@@ -116,12 +121,30 @@ export function Navbar() {
                 </Link>
                 <Link href="/leaderboard" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
                   location === "/leaderboard"
-                    ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                    ? "border-l-2 border-l-primary border-y-primary/20 border-r-primary/20 bg-primary/12 text-primary font-bold shadow-sm"
                     : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
                 }`}>
                   <Trophy className="h-4 w-4" />
                   <span className="font-semibold">Leaderboard</span>
                 </Link>
+                <Link href="/docs" onClick={() => setMobileMenuOpen(false)} className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
+                  location === "/docs"
+                    ? "border-l-2 border-l-primary border-y-primary/20 border-r-primary/20 bg-primary/12 text-primary font-bold shadow-sm"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
+                }`}>
+                  <BookOpen className="h-4 w-4" />
+                  <span className="font-semibold">Docs</span>
+                </Link>
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setBugModalOpen(true);
+                  }}
+                  className="group flex w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground transition-all cursor-pointer text-left"
+                >
+                  <Bug className="h-4 w-4" />
+                  <span className="font-semibold">Report Issue</span>
+                </button>
 
                 <div className="h-[1px] bg-border/40 my-2" />
 
@@ -192,7 +215,7 @@ export function Navbar() {
               {isMuted ? <VolumeX className="h-4 w-4 sm:h-4.5 sm:w-4.5" /> : <Volume2 className="h-4 w-4 sm:h-4.5 sm:w-4.5" />}
             </Button>
           </div>
-          <Button asChild size="sm" className="hidden sm:inline-flex gap-2 font-mono text-xs uppercase text-black">
+          <Button asChild size="sm" className="hidden sm:inline-flex gap-2 font-mono text-xs uppercase text-black bg-gradient-to-r from-[var(--accent-neon)] to-[var(--accent-neon-dark)] hover:shadow-[0_0_15px_var(--accent-neon-glow)] transition-all duration-300 shimmer-hover active:scale-95 border-none">
             <Link href="/launch"><PlusCircle className="h-3.5 w-3.5" /> Launch Token</Link>
           </Button>
 
@@ -226,6 +249,7 @@ export function Navbar() {
       )}
 
       <TickerTape />
+      <BugReportModal open={bugModalOpen} onOpenChange={setBugModalOpen} />
     </div>
   );
 }
@@ -622,7 +646,7 @@ function WalletButton({
       <DialogTrigger asChild>
         <Button
           onClick={handleWalletConnectClick}
-          className="font-mono text-xs uppercase text-black font-bold tracking-wider hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all h-9 rounded-lg px-2 sm:px-4"
+          className="font-mono text-xs uppercase text-black bg-gradient-to-r from-[var(--accent-neon)] to-[var(--accent-neon-dark)] hover:shadow-[0_0_15px_var(--accent-neon-glow)] transition-all duration-300 shimmer-hover active:scale-95 font-bold tracking-wider h-9 rounded px-2 sm:px-4 border-none"
           data-testid="button-connect-wallet"
         >
           <Wallet className="h-3.5 w-3.5 mr-1.5 shrink-0" />
@@ -669,6 +693,24 @@ function WalletButton({
   );
 }
 
+function TickerItem({ token }: { token: Token }) {
+  const live = useLiveTokenData(token);
+  const isPositive = live.change24h >= 0;
+  return (
+    <div className="flex items-center gap-3 px-8 font-mono text-xs border-r border-border/30 hover:bg-white/[0.02] transition-colors py-1 select-none">
+      <span className="font-extrabold text-foreground tracking-tight">${token.ticker}</span>
+      <span className="text-[var(--accent-neon)] font-bold">${formatPrice(live.price)}</span>
+      <span className={`flex items-center gap-0.5 font-bold ${isPositive ? "text-[var(--accent-neon)]" : "text-[var(--accent-destructive)]"}`}>
+        <span>{isPositive ? "▲" : "▼"}</span>
+        <span>{isPositive ? "+" : ""}{live.change24h.toFixed(1)}%</span>
+      </span>
+      <span className="text-muted-foreground text-[10px]">
+        VOL: <span className="text-foreground/75 font-semibold">${formatCompactNumber(live.volume24h)}</span>
+      </span>
+    </div>
+  );
+}
+
 function TickerTape() {
   const { data: items = [] } = useListTokens(
     { sort: ListTokensSort.newest, limit: 12 },
@@ -683,19 +725,10 @@ function TickerTape() {
   if (items.length === 0) return null;
 
   return (
-    <div className="w-full bg-black/50 border-t border-border overflow-hidden h-8 flex items-center">
-      <div className="flex animate-[ticker_20s_linear_infinite] whitespace-nowrap min-w-full">
+    <div className="w-full bg-[var(--bg-sidebar)] border-t border-border/80 overflow-hidden h-9 flex items-center relative after:absolute after:inset-y-0 after:right-0 after:w-16 after:bg-gradient-to-l after:from-[var(--bg-base)] after:to-transparent after:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-16 before:bg-gradient-to-r before:from-[var(--bg-base)] before:to-transparent before:pointer-events-none before:z-10 after:z-10">
+      <div className="flex animate-[ticker_25s_linear_infinite] whitespace-nowrap min-w-full will-change-transform py-1">
         {[...items, ...items].map((item, i) => (
-          <div key={i} className="flex items-center gap-2 px-6 font-mono text-xs">
-            <span className="font-bold text-muted-foreground">{item.ticker}</span>
-            <span>${formatPrice(item.price)}</span>
-            <span className={item.marketType === "amm_pool" ? "text-primary" : "text-yellow-400"}>
-              {item.marketType === "amm_pool" ? "POOL" : "NEW"}
-            </span>
-            <span className="text-muted-foreground">
-              Vol: ${formatCompactNumber(item.volume24h)}
-            </span>
-          </div>
+          <TickerItem key={i} token={item} />
         ))}
       </div>
     </div>

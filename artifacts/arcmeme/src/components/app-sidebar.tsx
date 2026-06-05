@@ -1,15 +1,20 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, BarChart3, Bell, PlusCircle, Radar, Star, WalletCards, Trophy } from "lucide-react";
+import { Activity, BarChart3, Bell, PlusCircle, Radar, Star, WalletCards, Trophy, BookOpen, Bug } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BugReportModal } from "@/components/bug-report-modal";
 
 const navItems = [
   { href: "/", label: "Terminal", icon: BarChart3 },
   { href: "/portfolio", label: "Portfolio", icon: WalletCards },
   { href: "/launch", label: "Launch", icon: PlusCircle },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/docs", label: "Docs", icon: BookOpen },
 ];
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const [bugModalOpen, setBugModalOpen] = useState(false);
 
   return (
     <aside className="hidden lg:flex fixed top-0 left-0 z-40 h-screen w-64 shrink-0 flex-col border-r border-border/80 bg-background/78 backdrop-blur-xl overflow-y-auto hide-scrollbar">
@@ -31,9 +36,9 @@ export function AppSidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all ${
+              className={`group flex items-center gap-3 rounded border px-3 py-2.5 text-sm transition-all relative after:absolute after:bottom-0 after:left-0 after:h-[2px] after:w-full after:bg-[var(--accent-neon)] after:scale-x-0 hover:after:scale-x-100 after:origin-left after:transition-transform after:duration-300 ${
                 active
-                  ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_rgba(34,197,94,0.12)]"
+                  ? "border-l-2 border-l-primary border-y-primary/20 border-r-primary/20 bg-primary/12 text-primary font-bold shadow-sm"
                   : "border-transparent text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
               }`}
             >
@@ -55,22 +60,33 @@ export function AppSidebar() {
               <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
                 <Star className="h-3.5 w-3.5 text-primary group-hover:scale-110 transition-transform" /> Watchlist
               </span>
-              <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">local</span>
+              <span className="font-mono text-[var(--accent-neon)] bg-white/5 backdrop-blur-md border border-white/10 text-[9px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">local</span>
             </Link>
             <Link href="/?alerts=show" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
               <span className="flex items-center gap-2 text-muted-foreground group-hover:text-primary transition-colors">
                 <Bell className="h-3.5 w-3.5 text-primary group-hover:animate-bounce" /> Alerts
               </span>
-              <span className="font-mono text-primary bg-primary/10 border border-primary/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">armed</span>
+              <span className="font-mono text-[var(--accent-neon)] bg-white/5 backdrop-blur-md border border-white/10 text-[9px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">armed</span>
             </Link>
             <Link href="/launch" className="flex items-center justify-between hover:bg-secondary/15 p-1 rounded transition-colors group cursor-pointer">
               <span className="flex items-center gap-2 text-muted-foreground group-hover:text-yellow-400 transition-colors">
                 <WalletCards className="h-3.5 w-3.5 text-yellow-400" /> Arc Pooling
               </span>
-              <span className="font-mono text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">beta</span>
+              <span className="font-mono text-yellow-400 bg-white/5 backdrop-blur-md border border-white/10 text-[9px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">beta</span>
             </Link>
           </div>
         </div>
+      </div>
+
+      <div className="mt-3 px-3">
+        <Button
+          onClick={() => setBugModalOpen(true)}
+          variant="outline"
+          className="w-full flex items-center justify-center gap-2 border border-dashed border-border/80 hover:border-[var(--accent-neon)] bg-background/20 text-muted-foreground hover:text-[var(--accent-neon)] hover:shadow-[0_0_12px_var(--accent-neon-glow-card)] font-mono text-[10px] uppercase tracking-wider py-3 rounded transition-all duration-300 cursor-pointer"
+        >
+          <Bug className="h-3.5 w-3.5" />
+          Report Issue
+        </Button>
       </div>
 
       <div className="mt-auto border-t border-border/70 p-4">
@@ -78,6 +94,8 @@ export function AppSidebar() {
           Real launched tokens only. Fast filters, live pools, and on-chain trade history.
         </div>
       </div>
+
+      <BugReportModal open={bugModalOpen} onOpenChange={setBugModalOpen} />
     </aside>
   );
 }
