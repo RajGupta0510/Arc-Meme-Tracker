@@ -1,5 +1,6 @@
 /* ArcMeme Cyber OS Theme Configuration */
 :root {
+  color-scheme: only dark;
   /* Color Registry */
   --bg-base: #080B0F;
   --bg-card: #0C111A;
