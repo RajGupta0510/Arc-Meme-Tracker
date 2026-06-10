@@ -418,6 +418,7 @@ export async function addTokenUsdcLiquidity(params: {
     amountWusdcMin,
     signerAddress,
     toDeadline(),
+    { gasLimit: 400000n },
   );
   await tx.wait();
   return tx.hash as string;
@@ -462,6 +463,7 @@ export async function removeTokenUsdcLiquidity(params: {
     amountWusdcMin,
     signerAddress,
     toDeadline(),
+    { gasLimit: 400000n },
   );
   await tx.wait();
   return tx.hash as string;

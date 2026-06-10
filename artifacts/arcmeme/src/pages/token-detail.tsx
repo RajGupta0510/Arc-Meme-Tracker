@@ -2153,7 +2153,7 @@ export function TokenDetailPage() {
                 <div>
                   <div className="mb-1.5 flex justify-between text-[10px] font-bold text-muted-foreground">
                     <span>WUSDC BALANCE</span>
-                    <span className="text-foreground">{usdcBalance ?? "0.000"}</span>
+                    <span className="text-foreground">{market.wusdcBalance ?? "0.000"}</span>
                   </div>
                   <Input
                     type="number"
