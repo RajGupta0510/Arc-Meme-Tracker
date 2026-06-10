@@ -7,6 +7,7 @@ import {
   addTokenUsdcLiquidity,
   createTokenUsdcPair,
   getBrowserSigner,
+  getWusdcContract,
   readTokenDecimals,
   removeTokenUsdcLiquidity,
   wrapNativeUsdc,
@@ -94,8 +95,16 @@ export function useTokenLiquidity() {
       setStatus({ status: "detecting-pair" });
       const pairResult = await createTokenUsdcPair(token.contractAddress, DEFAULT_ARC_AMM, signer);
 
-      setStatus({ status: "wrapping-usdc" });
-      await wrapNativeUsdc(parseUnits(wusdcAmount, nativeDecimals), DEFAULT_ARC_AMM, signer);
+      const signerAddress = await signer.getAddress();
+      const wusdcContract = getWusdcContract(DEFAULT_ARC_AMM.wusdcAddress, signer);
+      const currentWusdcBalance = BigInt(await wusdcContract.balanceOf(signerAddress));
+      const neededWusdc = parseUnits(wusdcAmount, nativeDecimals);
+
+      if (currentWusdcBalance < neededWusdc) {
+        setStatus({ status: "wrapping-usdc" });
+        const amountToWrap = neededWusdc - currentWusdcBalance;
+        await wrapNativeUsdc(amountToWrap, DEFAULT_ARC_AMM, signer);
+      }
 
       setStatus({ status: "approving" });
       const tokenDecimals = await readTokenDecimals(token.contractAddress, signer);
