@@ -31,6 +31,24 @@ type ExecuteTradeParams = {
   nativeDecimals?: number;
 };
 
+function safeParseUnits(amount: string, decimals: number): bigint {
+  let cleanAmount = amount;
+  if (cleanAmount.includes("e") || cleanAmount.includes("E")) {
+    const num = Number(cleanAmount);
+    if (Number.isFinite(num) && num > 0) {
+      let fixed = num.toFixed(decimals);
+      if (fixed.includes(".")) {
+        fixed = fixed.replace(/0+$/, "");
+        if (fixed.endsWith(".")) {
+          fixed = fixed.slice(0, -1);
+        }
+      }
+      cleanAmount = fixed;
+    }
+  }
+  return parseUnits(cleanAmount, decimals);
+}
+
 function getEthereum() {
   return typeof window !== "undefined" ? window.ethereum : undefined;
 }
@@ -80,7 +98,7 @@ export function useTokenTrade() {
       let txHash: string;
 
       if (params.side === "buy") {
-        const amountIn = parseUnits(params.amount, nativeDecimals);
+        const amountIn = safeParseUnits(params.amount, nativeDecimals);
         const quotedOut = calculateAmountOut(
           amountIn,
           params.reserves.quoteReserve,
@@ -102,7 +120,7 @@ export function useTokenTrade() {
           nativeDecimals,
         });
       } else {
-        const amountIn = parseUnits(params.amount, params.tokenDecimals);
+        const amountIn = safeParseUnits(params.amount, params.tokenDecimals);
         const quotedOut = calculateAmountOut(
           amountIn,
           params.reserves.baseReserve,

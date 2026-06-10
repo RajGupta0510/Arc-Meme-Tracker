@@ -881,11 +881,45 @@ export function TokenDetailPage() {
     liquidity.status.status === "withdrawing" ? "Withdrawing liquidity..." :
     liquidity.status.status === "saving-market" ? "Saving market..." :
     liquidityTab === "add" ? "Add Liquidity" : "Withdraw Liquidity";
+  const toPlainString = (num: number, maxDecimals: number) => {
+    let str = num.toFixed(maxDecimals);
+    if (str.includes(".")) {
+      str = str.replace(/0+$/, "");
+      if (str.endsWith(".")) {
+        str = str.slice(0, -1);
+      }
+    }
+    return str;
+  };
+
+  const safeParseUnits = (amount: string, decimals: number): bigint => {
+    let cleanAmount = amount;
+    if (cleanAmount.includes("e") || cleanAmount.includes("E")) {
+      const num = Number(cleanAmount);
+      if (Number.isFinite(num) && num > 0) {
+        let fixed = num.toFixed(decimals);
+        if (fixed.includes(".")) {
+          fixed = fixed.replace(/0+$/, "");
+          if (fixed.endsWith(".")) {
+            fixed = fixed.slice(0, -1);
+          }
+        }
+        cleanAmount = fixed;
+      }
+    }
+    return parseUnits(cleanAmount, decimals);
+  };
 
   const formatSwapAmount = (value: bigint, decimals: number) => {
     const number = Number(formatUnits(value, decimals));
     if (!Number.isFinite(number) || number <= 0) return "";
-    if (number < 0.001) return number.toPrecision(4);
+    if (number < 0.001) {
+      const sigStr = number.toPrecision(4);
+      if (sigStr.includes("e") || sigStr.includes("E")) {
+        return toPlainString(number, decimals);
+      }
+      return sigStr;
+    }
     return formatBalance(number);
   };
 
@@ -893,12 +927,12 @@ export function TokenDetailPage() {
     if (!market.reserves || !amount || Number(amount) <= 0) return "";
     try {
       if (tradeTab === "buy") {
-        const amountIn = parseUnits(amount, nativeDecimals);
+        const amountIn = safeParseUnits(amount, nativeDecimals);
         const amountOut = calculateAmountOut(amountIn, market.reserves.quoteReserve, market.reserves.baseReserve);
         return formatSwapAmount(amountOut, market.tokenDecimals);
       }
 
-      const amountIn = parseUnits(amount, market.tokenDecimals);
+      const amountIn = safeParseUnits(amount, market.tokenDecimals);
       const amountOut = calculateAmountOut(amountIn, market.reserves.baseReserve, market.reserves.quoteReserve);
       return formatSwapAmount(amountOut, nativeDecimals);
     } catch {
@@ -928,12 +962,12 @@ export function TokenDetailPage() {
     if (!market.reserves || !amount || Number(amount) <= 0) return "";
     try {
       if (tradeTab === "buy") {
-        const amountOut = parseUnits(amount, market.tokenDecimals);
+        const amountOut = safeParseUnits(amount, market.tokenDecimals);
         const amountIn = calculateAmountIn(amountOut, market.reserves.quoteReserve, market.reserves.baseReserve);
         return formatSwapAmount(amountIn, nativeDecimals);
       }
 
-      const amountOut = parseUnits(amount, nativeDecimals);
+      const amountOut = safeParseUnits(amount, nativeDecimals);
       const amountIn = calculateAmountIn(amountOut, market.reserves.baseReserve, market.reserves.quoteReserve);
       return formatSwapAmount(amountIn, market.tokenDecimals);
     } catch {
@@ -949,7 +983,7 @@ export function TokenDetailPage() {
       if (baseReserve === 0n || quoteReserve === 0n) return "";
 
       if (inputType === "token") {
-        const tokenVal = parseUnits(amount, market.tokenDecimals);
+        const tokenVal = safeParseUnits(amount, market.tokenDecimals);
         const wusdcVal = (tokenVal * quoteReserve) / baseReserve;
         const formatted = formatUnits(wusdcVal, nativeDecimals);
         let clean = formatted;
@@ -961,7 +995,7 @@ export function TokenDetailPage() {
         }
         return clean;
       } else {
-        const wusdcVal = parseUnits(amount, nativeDecimals);
+        const wusdcVal = safeParseUnits(amount, nativeDecimals);
         const tokenVal = (wusdcVal * baseReserve) / quoteReserve;
         const formatted = formatUnits(tokenVal, market.tokenDecimals);
         let clean = formatted;
