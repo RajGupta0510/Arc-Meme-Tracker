@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useWallet } from "@/hooks/use-wallet";
 import { useAudioTelemetry } from "@/hooks/use-audio-telemetry";
+import { WalletConnectModal } from "@/components/wallet-connect-modal";
 import { ListTokensSort, getListTokensQueryKey, useListTokens, type Token } from "@workspace/api-client-react";
 import { useLiveTokenData } from "@/hooks/use-live-token-data";
 import { formatCompactNumber, formatPrice } from "@/lib/utils";
@@ -30,7 +31,8 @@ import {
   Trophy,
   WalletCards,
   BookOpen,
-  Bug
+  Bug,
+  AlertTriangle
 } from "lucide-react";
 import { BugReportModal } from "@/components/bug-report-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -62,7 +64,7 @@ function readJson<T>(key: string, fallback: T): T {
 }
 
 export function Navbar() {
-  const { state, connect, disconnect, switchToArcTestnet, getShortAddress } = useWallet();
+  const { state, connect, disconnect, switchToArcTestnet, getShortAddress, activeRdns } = useWallet();
   const { isMuted, toggleMute } = useAudioTelemetry();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -228,6 +230,7 @@ export function Navbar() {
             onDisconnect={disconnect}
             onSwitchNetwork={switchToArcTestnet}
             getShortAddress={getShortAddress}
+            activeRdns={activeRdns}
           />
         </div>
       </div>
@@ -436,10 +439,11 @@ type WalletButtonProps = {
   isConnected: boolean;
   isConnecting: boolean;
   hasError: boolean;
-  onConnect: () => Promise<void>;
+  onConnect: (providerDetail?: any) => Promise<void>;
   onDisconnect: () => void;
   onSwitchNetwork: () => Promise<void>;
   getShortAddress: (address: string) => string;
+  activeRdns: string | null;
 };
 
 function getAddressGradient(address: string) {
@@ -459,35 +463,11 @@ function WalletButton({
   onDisconnect,
   onSwitchNetwork,
   getShortAddress,
+  activeRdns,
 }: WalletButtonProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-
-  const hasMetaMask = typeof window !== "undefined" && window.ethereum !== undefined;
-  const isMobile = typeof navigator !== "undefined" && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-  const handleWalletConnectClick = async () => {
-    if (hasMetaMask && !isMobile) {
-      await onConnect();
-    } else {
-      setModalOpen(true);
-    }
-  };
-
-  const handleMetaMaskSelect = async () => {
-    setModalOpen(false);
-    if (isMobile) {
-      const dappUrl = window.location.host + window.location.pathname + window.location.search;
-      window.location.href = `metamask://dapp/${dappUrl}`;
-    } else {
-      if (hasMetaMask) {
-        await onConnect();
-      } else {
-        window.open("https://metamask.io/download/", "_blank");
-      }
-    }
-  };
 
   const handleCopy = () => {
     if (state.status === "connected") {
@@ -520,165 +500,145 @@ function WalletButton({
     const gradient = getAddressGradient(state.address);
 
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className="flex items-center gap-1.5 sm:gap-2 px-2 py-1.5 sm:px-3 rounded-lg border border-border/80 bg-black/40 backdrop-blur-md hover:border-primary/50 transition-all font-mono text-xs text-foreground outline-none group"
-            data-testid="button-connected-wallet"
+      <div className="flex items-center gap-2">
+        {isWrongNetwork && (
+          <Button
+            onClick={onSwitchNetwork}
+            className="font-mono text-xs uppercase bg-yellow-500 hover:bg-yellow-600 text-black border-none gap-1.5 h-9 px-3 rounded-lg animate-pulse"
           >
-            {/* Status dot */}
-            <div className={`h-2 w-2 rounded-full ${isWrongNetwork ? "bg-yellow-500 animate-pulse" : "bg-primary shadow-[0_0_8px_hsl(var(--primary))]"}`} />
-            
-            {/* Balance */}
-            <span className="text-muted-foreground hidden md:inline border-r border-border/60 pr-2 mr-0.5 font-bold">
-              {state.usdcBalance} USDC
-            </span>
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">Switch to Arc Testnet</span>
+            <span className="sm:hidden">Switch Net</span>
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex items-center gap-1.5 sm:gap-2 px-2 py-1.5 sm:px-3 rounded-lg border border-border/80 bg-black/40 backdrop-blur-md hover:border-primary/50 transition-all font-mono text-xs text-foreground outline-none group"
+              data-testid="button-connected-wallet"
+            >
+              {/* Status dot */}
+              <div className={`h-2 w-2 rounded-full ${isWrongNetwork ? "bg-yellow-500 animate-pulse" : "bg-primary shadow-[0_0_8px_hsl(var(--primary))]"}`} />
+              
+              {/* Balance */}
+              <span className="text-muted-foreground hidden md:inline border-r border-border/60 pr-2 mr-0.5 font-bold">
+                {state.usdcBalance} USDC
+              </span>
 
-            {/* Truncated Address */}
-            <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
-              {getShortAddress(state.address)}
-            </span>
+              {/* Truncated Address */}
+              <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                {getShortAddress(state.address)}
+              </span>
 
-            {/* Personalized Gradient Avatar */}
-            <div
-              className="h-5 w-5 rounded-full border border-border/60 shrink-0"
-              style={{ background: gradient }}
-            />
+              {/* Personalized Gradient Avatar */}
+              <div
+                className="h-5 w-5 rounded-full border border-border/60 shrink-0"
+                style={{ background: gradient }}
+              />
+              
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-64 border-border bg-card/95 backdrop-blur-xl p-2" align="end">
+            <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+              Active Session
+            </DropdownMenuLabel>
             
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-64 border-border bg-card/95 backdrop-blur-xl p-2" align="end">
-          <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
-            Active Session
-          </DropdownMenuLabel>
-          
-          <div className="px-2 py-2 flex flex-col gap-1 bg-background/50 border border-border/50 rounded-md mb-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] text-muted-foreground">Address</span>
-              <button 
-                onClick={handleCopy}
-                className="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded"
-                title="Copy Address"
-              >
-                {copied ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
-              </button>
+            <div className="px-2 py-2 flex flex-col gap-1 bg-background/50 border border-border/50 rounded-md mb-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[11px] text-muted-foreground">Address</span>
+                <button 
+                  onClick={handleCopy}
+                  className="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded"
+                  title="Copy Address"
+                >
+                  {copied ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+                </button>
+              </div>
+              <span className="font-mono text-xs text-foreground select-all break-all leading-tight">
+                {state.address}
+              </span>
+              
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
+                <span className="font-mono text-[11px] text-muted-foreground">USDC Balance</span>
+                <span className="font-mono text-xs font-bold text-primary">{state.usdcBalance} USDC</span>
+              </div>
             </div>
-            <span className="font-mono text-xs text-foreground select-all break-all leading-tight">
-              {state.address}
-            </span>
-            
-            <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
-              <span className="font-mono text-[11px] text-muted-foreground">USDC Balance</span>
-              <span className="font-mono text-xs font-bold text-primary">{state.usdcBalance} USDC</span>
-            </div>
-          </div>
 
-          <DropdownMenuItem asChild>
-            <Link href="/portfolio" className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all">
-              <PieChart className="h-3.5 w-3.5" />
-              <span>Wallet Portfolio</span>
-            </Link>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem asChild>
-            <a 
-              href={`https://testnet.arcscan.app/address/${state.address}`} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              <span>View Explorer</span>
-            </a>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem asChild>
-            <a 
-              href="https://faucet.circle.com/" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all"
-            >
-              <Droplet className="h-3.5 w-3.5" />
-              <span>Faucet</span>
-            </a>
-          </DropdownMenuItem>
-
-          {isWrongNetwork && (
-            <DropdownMenuItem 
-              onClick={onSwitchNetwork}
-              className="flex items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded transition-all mt-1"
-            >
-              <Wallet className="h-3.5 w-3.5" />
-              <span>Switch to Arc Testnet</span>
+            <DropdownMenuItem asChild>
+              <Link href="/portfolio" className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all">
+                <PieChart className="h-3.5 w-3.5" />
+                <span>Wallet Portfolio</span>
+              </Link>
             </DropdownMenuItem>
-          )}
 
-          <DropdownMenuSeparator className="bg-border/60 my-1.5" />
+            <DropdownMenuItem asChild>
+              <a 
+                href={`https://testnet.arcscan.app/address/${state.address}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>View Explorer</span>
+              </a>
+            </DropdownMenuItem>
 
-          <DropdownMenuItem 
-            onClick={onDisconnect}
-            className="flex items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 text-destructive hover:bg-destructive/10 rounded transition-all"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            <span>Disconnect Session</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <DropdownMenuItem asChild>
+              <a 
+                href="https://faucet.circle.com/" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex w-full items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 hover:bg-primary/10 hover:text-primary text-foreground rounded transition-all"
+              >
+                <Droplet className="h-3.5 w-3.5" />
+                <span>Faucet</span>
+              </a>
+            </DropdownMenuItem>
+
+            {isWrongNetwork && (
+              <DropdownMenuItem 
+                onClick={onSwitchNetwork}
+                className="flex items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded transition-all mt-1"
+              >
+                <Wallet className="h-3.5 w-3.5" />
+                <span>Switch to Arc Testnet</span>
+              </DropdownMenuItem>
+            )}
+
+            <DropdownMenuSeparator className="bg-border/60 my-1.5" />
+
+            <DropdownMenuItem 
+              onClick={onDisconnect}
+              className="flex items-center gap-2 cursor-pointer font-mono text-xs py-2 px-2 text-destructive hover:bg-destructive/10 rounded transition-all"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span>Disconnect Session</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     );
   }
 
   // Disconnected state
   return (
-    <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-      <DialogTrigger asChild>
-        <Button
-          onClick={handleWalletConnectClick}
-          className="font-mono text-xs uppercase text-black bg-gradient-to-r from-[var(--accent-neon)] to-[var(--accent-neon-dark)] hover:shadow-[0_0_15px_var(--accent-neon-glow)] transition-all duration-300 shimmer-hover active:scale-95 font-bold tracking-wider h-9 rounded px-2 sm:px-4 border-none"
-          data-testid="button-connect-wallet"
-        >
-          <Wallet className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-          <span>Connect<span className="hidden sm:inline"> Wallet</span></span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-[360px] border-border bg-card/95 backdrop-blur-xl p-6 font-mono text-xs text-foreground z-[200]">
-        <DialogHeader className="mb-4">
-          <DialogTitle className="font-mono text-sm uppercase tracking-widest text-primary text-center">
-            Connect Wallet
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <p className="text-muted-foreground text-center text-[10px] leading-relaxed">
-            {isMobile 
-              ? "Select MetaMask to open the ArcMeme terminal in your MetaMask App browser." 
-              : "Select MetaMask to connect your browser extension wallet."}
-          </p>
-          
-          <button
-            onClick={handleMetaMaskSelect}
-            className="w-full flex items-center justify-between border border-border/80 hover:border-primary/50 bg-background/40 hover:bg-primary/5 p-4 rounded-lg transition-all text-left outline-none group cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-black/40 border border-primary/20 p-1.5 shrink-0 group-hover:border-primary/50 transition-colors">
-                <Wallet className="h-4.5 w-4.5 text-primary" />
-              </div>
-              <div>
-                <span className="font-bold text-foreground group-hover:text-primary transition-colors text-sm">MetaMask</span>
-                <div className="text-[9px] text-muted-foreground mt-0.5">
-                  {isMobile ? "Open MetaMask Mobile App" : hasMetaMask ? "Connect browser extension" : "Install MetaMask Wallet"}
-                </div>
-              </div>
-            </div>
-            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-          </button>
-          
-          <div className="pt-2 border-t border-border/40 text-[9px] text-muted-foreground leading-relaxed text-center">
-            ArcMeme secure telemetry indexer. By connecting, you authorize on-chain interactions on the Arc Testnet.
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Button
+        onClick={() => setModalOpen(true)}
+        className="font-mono text-xs uppercase text-black bg-gradient-to-r from-[var(--accent-neon)] to-[var(--accent-neon-dark)] hover:shadow-[0_0_15px_var(--accent-neon-glow)] transition-all duration-300 shimmer-hover active:scale-95 font-bold tracking-wider h-9 rounded px-2 sm:px-4 border-none"
+        data-testid="button-connect-wallet"
+      >
+        <Wallet className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+        <span>Connect<span className="hidden sm:inline"> Wallet</span></span>
+      </Button>
+      <WalletConnectModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        onConnect={onConnect}
+        activeRdns={activeRdns}
+      />
+    </>
   );
 }
 

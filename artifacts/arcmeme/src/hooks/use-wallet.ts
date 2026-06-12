@@ -31,7 +31,34 @@ export type WalletState =
     }
   | { status: "error"; message: string };
 
+// Module-level state to track active provider and synchronize all hook instances
+let activeRdns: string | null = typeof window !== "undefined" ? window.localStorage.getItem("arcmeme.wallet_rdns") : null;
+let activeProvider: any = null;
+const providerAnnounceListeners = new Set<() => void>();
+
+// Cache discovered EIP-6963 providers globally
+const discoveredProviders = new Map<string, any>();
+
+if (typeof window !== "undefined") {
+  const handleAnnounce = (event: any) => {
+    const detail = event.detail;
+    if (!detail || !detail.info) return;
+
+    discoveredProviders.set(detail.info.rdns, detail.provider);
+
+    // If this matches the previously connected wallet session, restore it
+    if (activeRdns && detail.info.rdns === activeRdns) {
+      activeProvider = detail.provider;
+      providerAnnounceListeners.forEach((l) => l());
+    }
+  };
+
+  window.addEventListener("eip6963:announceProvider", handleAnnounce as EventListener);
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+}
+
 function getEthereum(): Eip1193Provider | null {
+  if (activeProvider) return activeProvider;
   if (typeof window !== "undefined" && window.ethereum !== undefined) {
     return window.ethereum as unknown as Eip1193Provider;
   }
@@ -39,6 +66,7 @@ function getEthereum(): Eip1193Provider | null {
 }
 
 function getRawEthereum() {
+  if (activeProvider) return activeProvider;
   if (typeof window !== "undefined" && window.ethereum !== undefined) {
     return window.ethereum;
   }
@@ -64,8 +92,8 @@ async function fetchUsdcBalance(address: string, chainId: string): Promise<strin
   }
 }
 
-
 export function useWallet() {
+  const [trigger, setTrigger] = useState(0);
   const [state, setState] = useState<WalletState>(() => {
     if (typeof window !== "undefined") {
       const cached = window.localStorage.getItem("arcmeme.wallet_connected");
@@ -85,6 +113,18 @@ export function useWallet() {
     return { status: "disconnected" };
   });
 
+  // Subscribe to EIP-6963 provider announcements to re-sync if the provider loaded late
+  useEffect(() => {
+    const handleUpdate = () => {
+      setTrigger((prev) => prev + 1);
+      updateConnectedState();
+    };
+    providerAnnounceListeners.add(handleUpdate);
+    return () => {
+      providerAnnounceListeners.delete(handleUpdate);
+    };
+  }, []);
+
   const getShortAddress = (address: string) =>
     address.slice(0, 6) + "..." + address.slice(-4);
 
@@ -98,6 +138,7 @@ export function useWallet() {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem("arcmeme.wallet_connected");
           window.localStorage.removeItem("arcmeme.wallet_address");
+          window.localStorage.removeItem("arcmeme.wallet_rdns");
         }
         return;
       }
@@ -126,6 +167,7 @@ export function useWallet() {
         window.localStorage.removeItem("arcmeme.wallet_connected");
         window.localStorage.removeItem("arcmeme.wallet_address");
         window.localStorage.removeItem("arcmeme.wallet_chain_id");
+        window.localStorage.removeItem("arcmeme.wallet_rdns");
       }
     }
   }, []);
@@ -143,9 +185,10 @@ export function useWallet() {
     return () => clearInterval(interval);
   }, [state.status === "connected" && state.isArcTestnet, state.status === "connected" ? state.address : null, state.status === "connected" ? state.chainId : null]);
 
+  // Handle provider events for the active provider
+  const currentEth = getRawEthereum();
   useEffect(() => {
-    const eth = getRawEthereum();
-    if (!eth) return;
+    if (!currentEth) return;
 
     updateConnectedState();
 
@@ -156,6 +199,7 @@ export function useWallet() {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem("arcmeme.wallet_connected");
           window.localStorage.removeItem("arcmeme.wallet_address");
+          window.localStorage.removeItem("arcmeme.wallet_rdns");
         }
       } else {
         updateConnectedState();
@@ -166,27 +210,37 @@ export function useWallet() {
       updateConnectedState();
     };
 
-    eth.on("accountsChanged", handleAccountsChanged);
-    eth.on("chainChanged", handleChainChanged);
+    currentEth.on("accountsChanged", handleAccountsChanged);
+    currentEth.on("chainChanged", handleChainChanged);
 
     return () => {
-      eth.removeListener("accountsChanged", handleAccountsChanged);
-      eth.removeListener("chainChanged", handleChainChanged);
+      currentEth.removeListener("accountsChanged", handleAccountsChanged);
+      currentEth.removeListener("chainChanged", handleChainChanged);
     };
-  }, [updateConnectedState]);
+  }, [updateConnectedState, currentEth]);
 
-  const connect = useCallback(async () => {
-    const eth = getRawEthereum();
-    if (!eth) {
-      setState({
-        status: "error",
-        message: "MetaMask not detected. Please install the MetaMask extension.",
-      });
-      return;
+  const connect = useCallback(async (providerDetail?: any) => {
+    if (providerDetail) {
+      activeRdns = providerDetail.info.rdns;
+      activeProvider = providerDetail.provider;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("arcmeme.wallet_rdns", providerDetail.info.rdns);
+      }
+      providerAnnounceListeners.forEach((l) => l());
+    } else {
+      const eth = getRawEthereum();
+      if (!eth) {
+        setState({
+          status: "error",
+          message: "No wallet provider detected.",
+        });
+        return;
+      }
     }
 
     setState({ status: "connecting" });
     try {
+      const eth = getRawEthereum();
       await eth.request({ method: "eth_requestAccounts" });
       await updateConnectedState();
     } catch (err: unknown) {
@@ -196,6 +250,7 @@ export function useWallet() {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem("arcmeme.wallet_connected");
           window.localStorage.removeItem("arcmeme.wallet_address");
+          window.localStorage.removeItem("arcmeme.wallet_rdns");
         }
       } else {
         setState({ status: "error", message: "Failed to connect wallet." });
@@ -205,11 +260,15 @@ export function useWallet() {
 
   const disconnect = useCallback(() => {
     setState({ status: "disconnected" });
+    activeRdns = null;
+    activeProvider = null;
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("arcmeme.wallet_connected");
       window.localStorage.removeItem("arcmeme.wallet_address");
       window.localStorage.removeItem("arcmeme.wallet_chain_id");
+      window.localStorage.removeItem("arcmeme.wallet_rdns");
     }
+    providerAnnounceListeners.forEach((l) => l());
   }, []);
 
   const switchToArcTestnet = useCallback(async () => {
@@ -238,5 +297,6 @@ export function useWallet() {
     refresh: updateConnectedState,
     getShortAddress,
     isMetaMaskAvailable: getRawEthereum() !== null,
+    activeRdns,
   };
 }
