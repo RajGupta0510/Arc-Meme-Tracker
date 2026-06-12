@@ -5,6 +5,7 @@ import {
   createChart,
   HistogramSeries,
   LineSeries,
+  CrosshairMode,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { Activity } from "lucide-react";
@@ -156,8 +157,8 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
   const latestRsi = rsiData.length > 0 ? rsiData[rsiData.length - 1].value : null;
   const latestMacd = macdData.length > 0 ? macdData[macdData.length - 1] : null;
 
-  // Compute heights dynamically
-  const activePanes = [showRsi && rsiData.length > 0, showMacd && macdData.length > 0].filter(Boolean).length;
+  // Compute heights dynamically based on checkbox selections (ensures panes expand even with insufficient data)
+  const activePanes = [showRsi, showMacd].filter(Boolean).length;
   const mainHeight = activePanes === 2 ? "54%" : activePanes === 1 ? "74%" : "100%";
   const subHeight = activePanes === 2 ? "22%" : "25%";
 
@@ -189,7 +190,7 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
         secondsVisible: false,
       },
       crosshair: {
-        mode: 1,
+        mode: CrosshairMode.Normal,
       },
       handleScroll: {
         mouseWheel: true,
@@ -308,7 +309,7 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
           timeVisible: true,
         },
         crosshair: {
-          mode: 1,
+          mode: CrosshairMode.Normal,
         },
       });
 
@@ -376,7 +377,7 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
           timeVisible: true,
         },
         crosshair: {
-          mode: 1,
+          mode: CrosshairMode.Normal,
         },
       });
 
@@ -479,7 +480,7 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
             onChange={(e) => setShowEma9(e.target.checked)}
             className="rounded border-border bg-secondary/30 text-primary focus:ring-primary/20 accent-primary h-3.5 w-3.5"
           />
-          <span>EMA 9 (Blue)</span>
+          <span>EMA 9 (Blue){showEma9 && candles.length < 9 && <span className="text-destructive font-bold ml-1 animate-pulse">[PENDING DATA]</span>}</span>
         </label>
         <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-foreground text-yellow-400/80 hover:text-yellow-400 transition-colors">
           <input
@@ -488,7 +489,7 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
             onChange={(e) => setShowEma21(e.target.checked)}
             className="rounded border-border bg-secondary/30 text-primary focus:ring-primary/20 accent-primary h-3.5 w-3.5"
           />
-          <span>EMA 21 (Yellow)</span>
+          <span>EMA 21 (Yellow){showEma21 && candles.length < 21 && <span className="text-destructive font-bold ml-1 animate-pulse">[PENDING DATA]</span>}</span>
         </label>
         <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-foreground text-purple-400/80 hover:text-purple-400 transition-colors">
           <input
@@ -497,7 +498,7 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
             onChange={(e) => setShowRsi(e.target.checked)}
             className="rounded border-border bg-secondary/30 text-primary focus:ring-primary/20 accent-primary h-3.5 w-3.5"
           />
-          <span>RSI Pane (14)</span>
+          <span>RSI Pane (14){showRsi && candles.length < 15 && <span className="text-destructive font-bold ml-1 animate-pulse">[PENDING DATA]</span>}</span>
         </label>
         <label className="flex items-center gap-1.5 cursor-pointer select-none hover:text-foreground text-cyan-400/80 hover:text-cyan-400 transition-colors">
           <input
@@ -506,7 +507,7 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
             onChange={(e) => setShowMacd(e.target.checked)}
             className="rounded border-border bg-secondary/30 text-primary focus:ring-primary/20 accent-primary h-3.5 w-3.5"
           />
-          <span>MACD Pane</span>
+          <span>MACD Pane{showMacd && candles.length < 26 && <span className="text-destructive font-bold ml-1 animate-pulse">[PENDING DATA]</span>}</span>
         </label>
       </div>
 
@@ -518,21 +519,29 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
       />
 
       {/* Synchronized RSI Sub-pane */}
-      {showRsi && rsiData.length > 0 && (
+      {showRsi && (
         <div 
           className="w-full shrink-0 border-t border-border/20 pt-2.5 relative"
           style={{ height: subHeight }}
         >
           <div className="absolute top-2.5 left-2.5 z-10 font-mono text-[8px] text-muted-foreground uppercase tracking-widest bg-black/60 px-1.5 py-0.5 rounded border border-border/20 flex gap-2 select-none">
             <span>RSI (14) Strength Indicator</span>
-            <span className="text-primary font-black animate-pulse">LATEST: {latestRsi?.toFixed(1) ?? "N/A"}</span>
+            <span className="text-primary font-black animate-pulse">
+              {rsiData.length > 0 ? `LATEST: ${latestRsi?.toFixed(1)}` : "INSUFFICIENT DATA (REQUIRES 15 CANDLES)"}
+            </span>
           </div>
-          <div ref={rsiContainerRef} className="w-full h-full" />
+          {rsiData.length > 0 ? (
+            <div ref={rsiContainerRef} className="w-full h-full" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground/40 font-mono text-[9px] uppercase tracking-wider">
+              RSI calculation requires a minimum of 15 candlestick data points (Current: {candles.length}).
+            </div>
+          )}
         </div>
       )}
 
       {/* Synchronized MACD Sub-pane */}
-      {showMacd && macdData.length > 0 && (
+      {showMacd && (
         <div 
           className="w-full shrink-0 border-t border-border/20 pt-2.5 relative"
           style={{ height: subHeight }}
@@ -540,10 +549,16 @@ export function MarketCandlestickChart({ candles }: MarketCandlestickChartProps)
           <div className="absolute top-2.5 left-2.5 z-10 font-mono text-[8px] text-muted-foreground uppercase tracking-widest bg-black/60 px-1.5 py-0.5 rounded border border-border/20 flex gap-2 select-none">
             <span>MACD (12, 26, 9) Oscillator</span>
             <span className="text-cyan-400 font-black animate-pulse">
-              VAL: {latestMacd?.macd.toFixed(6) ?? "N/A"}
+              {macdData.length > 0 ? `VAL: ${latestMacd?.macd.toFixed(6)}` : "INSUFFICIENT DATA (REQUIRES 26 CANDLES)"}
             </span>
           </div>
-          <div ref={macdContainerRef} className="w-full h-full" />
+          {macdData.length > 0 ? (
+            <div ref={macdContainerRef} className="w-full h-full" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground/40 font-mono text-[9px] uppercase tracking-wider">
+              MACD calculation requires a minimum of 26 candlestick data points (Current: {candles.length}).
+            </div>
+          )}
         </div>
       )}
     </div>
