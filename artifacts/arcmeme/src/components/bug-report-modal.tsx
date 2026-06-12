@@ -116,7 +116,7 @@ export function BugReportModal({ open, onOpenChange }: BugReportModalProps) {
             Report Issue / Bug
           </DialogTitle>
           <DialogDescription className="font-mono text-[10px] text-muted-foreground mt-1 leading-normal">
-            Submit bugs directly to the developer team. Submissions are routed automatically to <strong className="text-foreground">rajaryangupta5@gmail.com</strong>.
+            Submit bugs directly to the developer team. Submissions are routed automatically to the project owner.
           </DialogDescription>
         </DialogHeader>
 
