@@ -128,9 +128,16 @@ export function useWallet() {
   const getShortAddress = (address: string) =>
     address.slice(0, 6) + "..." + address.slice(-4);
 
-  const updateConnectedState = useCallback(async () => {
+  const updateConnectedState = useCallback(async (force = false) => {
     const eth = getRawEthereum();
     if (!eth) return;
+
+    // Only proceed if we are explicitly forcing connection (e.g. from connect()), or if we have a persisted connection session
+    const hasCachedConnection = typeof window !== "undefined" && window.localStorage.getItem("arcmeme.wallet_connected") === "true";
+    if (!force && !hasCachedConnection) {
+      return;
+    }
+
     try {
       const accounts = (await eth.request({ method: "eth_accounts" })) as string[];
       if (!accounts || accounts.length === 0) {
@@ -187,8 +194,9 @@ export function useWallet() {
 
   // Handle provider events for the active provider
   const currentEth = getRawEthereum();
+  const isCurrentlyConnected = state.status === "connected";
   useEffect(() => {
-    if (!currentEth) return;
+    if (!currentEth || !isCurrentlyConnected) return;
 
     updateConnectedState();
 
@@ -217,7 +225,7 @@ export function useWallet() {
       currentEth.removeListener("accountsChanged", handleAccountsChanged);
       currentEth.removeListener("chainChanged", handleChainChanged);
     };
-  }, [updateConnectedState, currentEth]);
+  }, [updateConnectedState, currentEth, isCurrentlyConnected]);
 
   const connect = useCallback(async (providerDetail?: any) => {
     if (providerDetail) {
@@ -242,7 +250,7 @@ export function useWallet() {
     try {
       const eth = getRawEthereum();
       await eth.request({ method: "eth_requestAccounts" });
-      await updateConnectedState();
+      await updateConnectedState(true);
     } catch (err: unknown) {
       const code = (err as { code?: number }).code;
       if (code === 4001) {
