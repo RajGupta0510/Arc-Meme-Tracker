@@ -6,6 +6,7 @@ ArcMeme Market OS is a next-generation decentralized liquidity aggregator, meme 
 
 ## 🚀 Key Features
 
+* **EIP-6963 Multi-Wallet Integration:** Dynamic discovery and connection for all installed browser wallet extensions (MetaMask, Phantom, SubWallet, OKX Wallet, Rabby Wallet, etc.) using the EIP-6963 standard. Features a custom dark glassmorphic selection dialog, mobile deep-linking redirections, and one-click automatic network switching/adding for the Arc Network Testnet.
 * **Instant Token Launchpad:** Easily initialize custom ERC-20 meme tokens with custom symbols, total supply, and logo colors. Upon launch, a dedicated Constant Product AMM pool is automatically deployed.
 * **Dynamic AMM Pools:** All meme tokens trade against liquid, custom Constant Product ($x \times y = k$) pairs using Wrapped USDC (WUSDC) as the base reserve asset.
 * **Account Abstraction (AA) Smart Wallets:** Users can deploy deterministic smart contract wallets directly from the dashboard, secure funds inside their own contract, and manage WUSDC balances dedicated to copytrading.
